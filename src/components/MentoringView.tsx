@@ -1,8 +1,12 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { useTranslation } from '../context/LanguageContext';
+import { useAccessibility } from '../context/AccessibilityContext';
 import { MentoringSession } from '../types';
 import { RequestMentoringModal } from './RequestMentoringModal';
 import { LearnerConfirmationModal } from './LearnerConfirmationModal';
+import { VirtualStudyRoomModal } from './VirtualStudyRoomModal';
+import { CreateStudyRoomModal } from './CreateStudyRoomModal';
 import { LearningPlanPanel, SessionMeetingDetails, TeachingSources } from './LearningPlanPanel';
 import {
   GraduationCap,
@@ -22,6 +26,13 @@ import {
   RotateCcw,
   Award,
   BookOpen,
+  Mic,
+  Hand,
+  MessageSquare,
+  Languages,
+  Users,
+  Video,
+  PenTool,
 } from 'lucide-react';
 
 export const MentoringView: React.FC = () => {
@@ -32,9 +43,26 @@ export const MentoringView: React.FC = () => {
     acceptMentoringSession,
     declineMentoringSession,
     finishMentoringSession,
+    studyRooms,
+    activeStudyRoomId,
+    setActiveStudyRoomId,
+    joinStudyRoom,
+    getOrCreateSessionStudyRoom,
   } = useApp();
 
+  const { t, currentLanguage } = useTranslation();
+  const {
+    startCaptions,
+    isCaptionsActive,
+    openSignLanguageModal,
+    openMuteHandoverModal,
+    setIsTranslatorModalOpen,
+  } = useAccessibility();
+
+  const [mentoringSubTab, setMentoringSubTab] = useState<'sessions' | 'study_rooms'>('sessions');
+  const [studyRoomFilter, setStudyRoomFilter] = useState<'all' | 'asl_supported' | 'text_based'>('all');
   const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
+  const [isCreateRoomModalOpen, setIsCreateRoomModalOpen] = useState(false);
   const [selectedSessionForConfirmation, setSelectedSessionForConfirmation] =
     useState<MentoringSession | null>(null);
   const [toastMessage, setToastMessage] = useState<{
@@ -50,8 +78,6 @@ export const MentoringView: React.FC = () => {
   };
 
   // Rohan's current credits & milestone progress
-  const rohan = users.rohan;
-  const isRohanAtMilestone = (rohan?.credits ?? 0) >= 10000;
 
   // Filter sessions relevant to the current user or platform
   const isMentor = currentUser.isVerifiedMentor === true;
@@ -77,6 +103,12 @@ export const MentoringView: React.FC = () => {
   const completedSessions = sessions.filter((s) => s.status === 'completed' && isParticipant(s));
   const supportedSessions = sessions.filter((s) => s.learningSupport && s.status !== 'declined' && isParticipant(s));
   const pendingRequestsForMe = sessions.filter((session) => session.studentId === currentUser.id && session.status === 'requested' && !session.learningSupport);
+
+  const activeStudyRoom = studyRooms.find((r) => r.id === activeStudyRoomId);
+  const filteredStudyRooms = studyRooms.filter(
+    (r) => (studyRoomFilter === 'all' || r.mode === studyRoomFilter)
+      && (!r.sessionId || sessions.some((session) => session.id === r.sessionId && isParticipant(session)))
+  );
 
   const handleAccept = (sessionId: string) => {
     const res = acceptMentoringSession(sessionId);
@@ -115,75 +147,295 @@ export const MentoringView: React.FC = () => {
         </div>
       )}
 
-      {/* Hero Banner */}
-      <div className="bg-gradient-to-r from-violet-950 via-indigo-900 to-purple-950 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
-        <div className="max-w-2xl relative z-10">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-white/15 backdrop-blur-md border border-white/20 text-violet-100 mb-3">
-            <GraduationCap className="w-3.5 h-3.5 text-violet-300" />
-            <span>Peer Mentoring & Credit Engine</span>
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight mb-2">
-            Learn at your pace. Plan support together.
-          </h1>
-          <p className="text-violet-100/90 text-sm leading-relaxed mb-4">
-            Free peer mentoring with an optional personalized learning plan. Choose support for memory, processing, reading, communication, energy or movement. Share what helps you learn; no diagnosis is needed.
-          </p>
+      <section className="grid md:grid-cols-[1fr_260px] gap-8 items-center py-6 border-b border-slate-200">
+        <div className="max-w-2xl">
+          <p className="text-sm text-slate-600 mb-3">A little help from your peers</p>
+          <h1 className="campus-heading text-4xl sm:text-5xl leading-[1.1] mb-4">You don’t have to<br className="hidden sm:block" /> figure it out alone.</h1>
+          <p className="text-base text-slate-600 leading-relaxed">Meet a student mentor, work through a tricky topic, or make a learning plan together. It’s free, and you can choose online or in person.</p>
+          <p className="text-sm text-slate-500 mt-3">Share what helps you learn. You can ask for shorter sessions, different materials or more time.</p>
+        </div>
+        <aside className="campus-note p-5 rounded-lg space-y-3 text-sm">
+          <p className="font-semibold">Start with what you need</p>
+          <p className="text-slate-600">Choose a topic and tell your mentor what would help. Review the plan together, then learn at your pace.</p>
+          <p className="border-t border-[#dfd9c7] pt-3 text-xs text-slate-600">Your preferences are enough. No diagnosis needed.</p>
+        </aside>
+      </section>
 
-          {/* Persona Guidance Banner */}
-          <div className="p-3.5 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 text-xs">
-            <div className="font-bold flex items-center gap-1.5 text-white mb-1">
-              <span>Persona: {currentUser.name}</span>
-              <span className="text-violet-200">({currentUser.grade})</span>
-              <span className="text-amber-300 font-mono ml-auto">
-                {currentUser.credits.toLocaleString()} CR
+      {/* Primary Sub-Navigation: Sessions vs Virtual Study Rooms */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-2 rounded-2xl border border-slate-200 shadow-2xs">
+        <div className="flex items-center gap-1.5 w-full sm:w-auto">
+          <button
+            onClick={() => setMentoringSubTab('sessions')}
+            className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2 ${
+              mentoringSubTab === 'sessions'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <GraduationCap className="w-4 h-4" />
+            <span>1-on-1 Peer Mentoring</span>
+            {activeSessionsForMe.length > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-indigo-500 text-white font-extrabold">
+                {activeSessionsForMe.length}
               </span>
-            </div>
-            {currentUser.id === 'aarav' && (
-              <p className="text-violet-100 text-[11px] leading-relaxed">
-                <strong>Learner:</strong> Request help with your chosen topic. Select personalized learning support to share your preferences, then review the plan your mentor prepares. You can ask for changes.
-              </p>
             )}
-            {currentUser.id === 'rohan' && (
-              <p className="text-violet-100 text-[11px] leading-relaxed">
-                <strong>Mentor:</strong> Review the learner’s preferences, accept the request and create an editable curriculum plan. Share it with the learner and teacher before the session. Mark the session finished after coaching; the learner confirms attendance.
-              </p>
-            )}
-            {currentUser.id === 'meera' && (
-              <p className="text-violet-100 text-[11px] leading-relaxed">
-                <strong>Senior learner:</strong> You can request support too. Only verified mentors can create a plan for their assigned learner.
-              </p>
-            )}
-            {currentUser.id === 'ananya' && (
-              <p className="text-violet-100 text-[11px] leading-relaxed">
-                👉 <strong>Faculty Oversight:</strong> Full audit authority over student sessions, quiz gains, and credit issuance.
-              </p>
-            )}
-          </div>
+          </button>
+
+          <button
+            onClick={() => setMentoringSubTab('study_rooms')}
+            className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2 relative ${
+              mentoringSubTab === 'study_rooms'
+                ? 'bg-purple-600 text-white shadow-xs'
+                : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <Hand className="w-4 h-4 text-purple-300" />
+            <span>Virtual Study Rooms</span>
+            <span className="flex h-2 w-2 relative">
+              <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+            </span>
+          </button>
         </div>
 
-        {/* Milestone Tracker Pill */}
-        <div className="mt-4 sm:mt-0 sm:absolute sm:right-8 sm:top-8 bg-black/30 backdrop-blur-md p-4 rounded-2xl border border-white/15 text-xs max-w-xs">
-          <div className="flex items-center justify-between font-bold text-amber-300 mb-1">
-            <span>Rohan's Contribution Progress</span>
-            <span className="font-mono text-white">{rohan?.credits ?? 0} / 10,000 CR</span>
-          </div>
-          <div className="w-full bg-white/20 rounded-full h-2 overflow-hidden mb-1.5">
-            <div
-              className="bg-amber-400 h-full rounded-full transition-all duration-500"
-              style={{
-                width: `${Math.min(100, ((rohan?.credits ?? 0) / 10000) * 100)}%`,
-              }}
-            />
-          </div>
-          <p className="text-[10px] text-slate-300">
-            {isRohanAtMilestone ? (
-              <strong className="text-emerald-400">10,000 CR eligibility milestone reached.</strong>
-            ) : (
-              <span>Mentoring awards follow learner-confirmed participation. Feedback should reflect the learner’s experience.</span>
-            )}
-          </p>
+        <div className="flex items-center gap-2 text-xs">
+          <button
+            onClick={() => setIsCreateRoomModalOpen(true)}
+            className="px-3.5 py-2 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 font-bold text-xs flex items-center gap-1.5 transition-all"
+          >
+            <Users className="w-3.5 h-3.5 text-purple-600" />
+            <span>Host Study Room</span>
+          </button>
         </div>
       </div>
+
+      {/* VIRTUAL STUDY ROOMS SUB-TAB */}
+      {mentoringSubTab === 'study_rooms' && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          {/* Virtual Study Rooms Hero Card */}
+          <div className="bg-slate-800 rounded-2xl p-6 sm:p-7 text-white relative overflow-hidden">
+            <div className="max-w-2xl relative z-10 space-y-2">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-white/15 backdrop-blur-md border border-white/20 text-purple-200">
+                <Hand className="w-3.5 h-3.5 text-purple-300" />
+                <span>Study room demo</span>
+              </div>
+              <h2 className="text-xl sm:text-2xl font-black tracking-tight">
+                A place to work things out together.
+              </h2>
+              <p className="text-purple-100/90 text-xs sm:text-sm leading-relaxed">
+                Try text chat, fingerspelling, a drawing board and shared notes. Room activity is saved in this browser; this demo does not connect devices or provide video calls.
+              </p>
+            </div>
+
+            <div className="mt-4 flex items-center gap-2">
+              <button
+                onClick={() => setIsCreateRoomModalOpen(true)}
+                className="px-4 py-2.5 rounded-xl bg-purple-500 hover:bg-purple-600 text-white font-bold text-xs shadow-md shadow-purple-900/50 flex items-center gap-1.5 transition-all"
+              >
+                <Users className="w-4 h-4" />
+                <span>Host New Study Room</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Filters & Quick Actions */}
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs">
+            <div className="flex items-center gap-1.5 overflow-x-auto">
+              <button
+                onClick={() => setStudyRoomFilter('all')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  studyRoomFilter === 'all'
+                    ? 'bg-slate-900 text-white shadow-2xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                All Rooms ({studyRooms.length})
+              </button>
+
+              <button
+                onClick={() => setStudyRoomFilter('asl_supported')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                  studyRoomFilter === 'asl_supported'
+                    ? 'bg-purple-600 text-white shadow-2xs'
+                    : 'bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200'
+                }`}
+              >
+                <Hand className="w-3.5 h-3.5" />
+                <span>Sign practice ({studyRooms.filter((r) => r.mode === 'asl_supported').length})</span>
+              </button>
+
+              <button
+                onClick={() => setStudyRoomFilter('text_based')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                  studyRoomFilter === 'text_based'
+                    ? 'bg-emerald-600 text-white shadow-2xs'
+                    : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'
+                }`}
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                <span>Text rooms ({studyRooms.filter((r) => r.mode === 'text_based').length})</span>
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2 text-xs text-slate-500">
+              <span className="flex h-2 w-2 relative">
+                <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+              </span>
+              <span className="font-semibold text-slate-700">Saved in this browser</span>
+            </div>
+          </div>
+
+          {/* Rooms Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredStudyRooms.map((room) => {
+              const isJoined = room.participants.some((p) => p.id === currentUser.id);
+              return (
+                <div
+                  key={room.id}
+                  className="bg-white rounded-3xl border border-slate-200 hover:border-indigo-300 p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-4 relative group"
+                >
+                  <div className="space-y-3">
+                    {/* Room Meta Badges */}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="flex h-2 w-2 relative">
+                          <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                        </span>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600">
+                          Demo room
+                        </span>
+                        <span className="text-slate-300">•</span>
+                        <span className="text-[10px] font-semibold text-slate-500">
+                          {room.subject}
+                        </span>
+                      </div>
+
+                      {room.mode === 'asl_supported' ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-purple-100 text-purple-800 border border-purple-200 flex items-center gap-1">
+                          <Hand className="w-3 h-3 text-purple-600" />
+                          <span>Sign practice</span>
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+                          <MessageSquare className="w-3 h-3 text-emerald-600" />
+                          <span>Text room</span>
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Room Title & Topic */}
+                    <div>
+                      <h3 className="font-extrabold text-slate-900 text-sm leading-snug group-hover:text-indigo-600 transition-colors">
+                        {room.title}
+                      </h3>
+                      <p className="text-[11px] text-indigo-700 font-semibold mt-0.5">
+                        Topic: {room.topic} • {room.grade}
+                      </p>
+                    </div>
+
+                    <p className="text-slate-600 text-xs line-clamp-2 leading-relaxed">
+                      {room.description}
+                    </p>
+
+                    {/* Host & Participant Presence */}
+                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <img
+                          src={room.hostAvatar}
+                          alt={room.hostName}
+                          className="w-6 h-6 rounded-full object-cover ring-1 ring-slate-300"
+                        />
+                        <div className="text-[11px]">
+                          <span className="font-bold text-slate-800 block leading-tight">
+                            {room.hostName}
+                          </span>
+                          <span className="text-slate-400 text-[10px]">{room.hostBadge || 'Host'}</span>
+                        </div>
+                      </div>
+
+                      {/* Participant Avatars */}
+                      <div className="flex items-center -space-x-1.5 overflow-hidden">
+                        {room.participants.slice(0, 3).map((p) => (
+                          <img
+                            key={p.id}
+                            src={p.avatar}
+                            alt={p.name}
+                            title={`${p.name} (${p.role})`}
+                            className="inline-block h-5 w-5 rounded-full ring-2 ring-white object-cover"
+                          />
+                        ))}
+                        {room.participants.length > 3 && (
+                          <span className="flex items-center justify-center h-5 w-5 rounded-full bg-slate-200 text-[9px] font-bold text-slate-600 ring-2 ring-white">
+                            +{room.participants.length - 3}
+                          </span>
+                        )}
+                        <span className="ml-2 text-[10px] font-semibold text-slate-500">
+                          {room.participants.length} in room
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Whiteboard Snippet Preview */}
+                    {room.whiteboardNotes.length > 0 && (
+                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 line-clamp-1 font-mono">
+                        <span className="font-bold text-indigo-700 uppercase mr-1 text-[10px]">
+                          Board:
+                        </span>
+                        <span>{room.whiteboardNotes[0].text}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Join Room CTA */}
+                  <div className="pt-2">
+                    <button
+                      onClick={() => {
+                        const result = joinStudyRoom(room.id);
+                        if (!result.success) showToast(result.message, 'error');
+                      }}
+                      className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-xs hover:shadow-md transition-all flex items-center justify-center gap-1.5"
+                    >
+                      <Users className="w-3.5 h-3.5" />
+                      <span>{isJoined ? 'Enter Study Room' : 'Join Collaborative Session'}</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Visual & Auditorily impaired Accessibility Feature Highlight */}
+          <div className="p-5 rounded-3xl bg-gradient-to-r from-purple-50 via-indigo-50 to-emerald-50 border border-purple-200/80 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 text-xs">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="font-extrabold text-slate-900 text-sm">
+                  Find a comfortable way to take part
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 font-bold text-[10px]">
+                  Practice tools
+                </span>
+              </div>
+              <p className="text-slate-600 text-xs max-w-2xl leading-relaxed">
+                Use typed notes, a drawing board or illustrative fingerspelling at your own pace. Microphone captions depend on browser support and permission. Check signs with a qualified teacher; these practice tools do not provide an interpreter or connect people across devices.
+              </p>
+            </div>
+
+            <button
+              onClick={() => openSignLanguageModal('STUDY')}
+              className="px-4 py-2 rounded-xl bg-white hover:bg-purple-50 text-purple-800 border border-purple-200 font-bold text-xs shadow-xs shrink-0 flex items-center gap-1.5 transition-all"
+            >
+              <Hand className="w-3.5 h-3.5 text-purple-600" />
+              <span>Explore Sign Gestures</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* SESSIONS SUB-TAB (1-ON-1 PEER MENTORING WORKFLOW) */}
+      {mentoringSubTab === 'sessions' && (
+        <div className="space-y-6">
 
       {/* Action Bar for Juniors */}
       <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
@@ -201,6 +453,72 @@ export const MentoringView: React.FC = () => {
           <GraduationCap className="w-4 h-4" />
           <span>Request Academic Help (0 Credits)</span>
         </button>
+      </div>
+
+      {/* Accessible Mentoring Tools for Visual & Auditorily impaired Peers */}
+      <div className="p-4 rounded-2xl bg-gradient-to-r from-purple-50/80 via-indigo-50/60 to-emerald-50/80 border border-indigo-100 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 text-xs">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-purple-600 text-white flex items-center justify-center font-bold shadow-xs">
+            <Sparkles className="w-4 h-4 text-purple-200" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="font-extrabold text-slate-900">
+                Communication tools
+              </span>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                Captions, text and signs
+              </span>
+            </div>
+            <p className="text-slate-600 text-[11px] mt-0.5">
+              Follow captions, practise fingerspelling or show a message in large text.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 self-stretch md:self-auto justify-end">
+          <button
+            onClick={startCaptions}
+            className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition-all text-xs ${
+              isCaptionsActive
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 shadow-2xs'
+            }`}
+          >
+            <Mic className="w-3.5 h-3.5 text-emerald-600" />
+            <span>{isCaptionsActive ? 'Open captions' : 'Captions & notes'}</span>
+          </button>
+
+          <button
+            onClick={() => openSignLanguageModal('TRIGONOMETRY')}
+            className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-bold flex items-center gap-1.5 transition-all text-xs shadow-2xs"
+          >
+            <Hand className="w-3.5 h-3.5 text-indigo-600" />
+            <span>Fingerspelling practice</span>
+          </button>
+
+          <button
+            onClick={() =>
+              openMuteHandoverModal({
+                mode: 'mentoring',
+                bookTitle: 'Applications of Trigonometry',
+                partnerName: 'Rohan Verma',
+              })
+            }
+            className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-bold flex items-center gap-1.5 transition-all text-xs shadow-2xs"
+          >
+            <MessageSquare className="w-3.5 h-3.5 text-purple-600" />
+            <span>Communication cards</span>
+          </button>
+
+          <button
+            onClick={() => setIsTranslatorModalOpen(true)}
+            className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-bold flex items-center gap-1.5 transition-all text-xs shadow-2xs"
+          >
+            <Languages className="w-3.5 h-3.5 text-blue-600" />
+            <span>Translate text ({currentLanguage.flag})</span>
+          </button>
+        </div>
       </div>
 
       <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-5 space-y-3 text-base text-slate-800">
@@ -226,7 +544,6 @@ export const MentoringView: React.FC = () => {
           <SessionMeetingDetails session={session} />
         </article>)}
       </section>}
-
       {/* Section 1: Incoming Requests (For Mentor) */}
       {isMentor && (
         <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-xs space-y-4">
@@ -367,7 +684,24 @@ export const MentoringView: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 self-end sm:self-auto">
+                  <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 self-end sm:self-auto">
+                    <button
+                      onClick={() => {
+                        const room = getOrCreateSessionStudyRoom(session);
+                        if (!room) {
+                          showToast('This mentoring session is no longer available to open.', 'error');
+                          return;
+                        }
+                        const result = joinStudyRoom(room.id);
+                        if (!result.success) showToast(result.message, 'error');
+                      }}
+                      className="px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-xs flex items-center gap-1.5 transition-all"
+                      title="Open the local study room with notes and practice tools"
+                    >
+                      <Hand className="w-3.5 h-3.5" />
+                      <span>Enter Virtual Study Room</span>
+                    </button>
+
                     {isAssignedMentor ? (
                       <div className="flex flex-col items-end gap-1">
                         <button
@@ -494,7 +828,7 @@ export const MentoringView: React.FC = () => {
 
         {completedSessions.length === 0 ? (
           <div className="p-8 text-center text-xs text-slate-400">
-            No completed mentoring sessions yet. Complete the demo workflow above to see verified records!
+            Your finished sessions will appear here.
           </div>
         ) : (
           <div className="space-y-3">
@@ -571,7 +905,7 @@ export const MentoringView: React.FC = () => {
 
       {/* Verified Mentors Directory */}
       <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-xs space-y-4">
-        <h3 className="font-bold text-slate-900 text-sm">Verified Star Mentors Directory</h3>
+        <h3 className="font-bold text-slate-900 text-sm">Student mentors</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {Object.values(users)
             .filter((u) => u.isVerifiedMentor === true)
@@ -613,8 +947,29 @@ export const MentoringView: React.FC = () => {
             ))}
         </div>
       </div>
+    </div>
+    )}
 
-      {/* Modals */}
+      {/* Virtual Study Room Modal */}
+      {activeStudyRoom && (
+        <VirtualStudyRoomModal
+          room={activeStudyRoom}
+          onClose={() => setActiveStudyRoomId(null)}
+          onOpenFinalQuiz={(session) => {
+            setActiveStudyRoomId(null);
+            setSelectedSessionForConfirmation(session);
+          }}
+        />
+      )}
+
+      {/* Create Study Room Modal */}
+      <CreateStudyRoomModal
+        isOpen={isCreateRoomModalOpen}
+        onClose={() => setIsCreateRoomModalOpen(false)}
+        onSuccess={(msg) => showToast(msg, 'success')}
+      />
+
+      {/* Mentoring Modals */}
       <RequestMentoringModal
         isOpen={isRequestModalOpen}
         onClose={() => setIsRequestModalOpen(false)}

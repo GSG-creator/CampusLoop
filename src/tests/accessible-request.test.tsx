@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import React from 'react';
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
-import { AppProvider, useApp } from '../context/AppContext';
+import { useApp } from '../context/AppContext';
+import { TestProviders } from './testProviders';
 import { RequestMentoringModal } from '../components/RequestMentoringModal';
 import { LearnerConfirmationModal } from '../components/LearnerConfirmationModal';
 import { createLearningPlanDraft } from '../data/learningSupport';
@@ -30,7 +31,7 @@ async function mount() {
     getItem: (key: string) => storage.get(key) ?? null,
     setItem: (key: string, value: string) => storage.set(key, value),
   } });
-  await act(async () => { renderer = create(<AppProvider><Capture /><RequestMentoringModal isOpen onClose={noop} onSuccess={noop} /></AppProvider>); });
+  await act(async () => { renderer = create(<TestProviders><Capture /><RequestMentoringModal isOpen onClose={noop} onSuccess={noop} /></TestProviders>); });
 }
 afterEach(async () => { await act(async () => renderer?.unmount()); });
 
@@ -68,7 +69,7 @@ test('supported request and completion work without quizzes or invented scores',
     app.switchUser('aarav');
   });
   let closed = false;
-  await act(async () => renderer.update(<AppProvider><Capture /><LearnerConfirmationModal session={app.sessions[0]} onClose={() => { closed = true; }} onSuccess={noop} /></AppProvider>));
+  await act(async () => renderer.update(<TestProviders><Capture /><LearnerConfirmationModal session={app.sessions[0]} onClose={() => { closed = true; }} onSuccess={noop} /></TestProviders>));
   assert.ok(text(renderer.root).includes('How did your learning session go?'));
   await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault: noop }));
   assert.equal(app.sessions[0].status, 'awaiting_learner_confirmation');

@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { useTranslation } from '../context/LanguageContext';
+import { useAccessibility } from '../context/AccessibilityContext';
 import {
   BookOpen,
   Coins,
@@ -14,6 +16,12 @@ import {
   Gift,
   TrendingUp,
   Bot,
+  Languages,
+  Eye,
+  Hand,
+  MessageSquare,
+  Mic,
+  ChevronDown,
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -36,7 +44,28 @@ export const Navbar: React.FC<NavbarProps> = ({
     markNotificationAsRead,
     clearNotifications,
   } = useApp();
+
+  const {
+    currentLanguage,
+    setLanguageByCode,
+    supportedLanguages,
+    t,
+  } = useTranslation();
+
+  const {
+    setIsA11yModalOpen,
+    openSignLanguageModal,
+    openMuteHandoverModal,
+    startCaptions,
+    isCaptionsActive,
+    isDeafMode,
+    isMuteMode,
+  } = useAccessibility();
+
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
+
+  useEffect(() => { setShowNotifications(false); setShowLanguageDropdown(false); }, [currentUser.id]);
 
   // Check pending handovers for current user
   const pendingHandoversForMe = books.filter(
@@ -68,167 +97,105 @@ export const Navbar: React.FC<NavbarProps> = ({
     currentUser.roles.includes('admin');
 
   return (
-    <header className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-slate-200">
+    <header onKeyDown={event => { if (event.key === 'Escape') { setShowNotifications(false); setShowLanguageDropdown(false); } }} className="sticky top-0 z-40 bg-[#fbfaf6]/95 backdrop-blur border-b border-slate-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
+        <div className="flex flex-wrap items-center justify-between gap-3 py-3 sm:flex-nowrap">
           {/* Brand Logo */}
           <div className="flex items-center gap-6">
             <div
+              role="button" tabIndex={0} aria-label="CampusLoop home"
+              onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setActiveTab('books'); } }}
               className="flex items-center gap-3 cursor-pointer group"
               onClick={() => setActiveTab('books')}
             >
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-700 to-violet-600 flex items-center justify-center text-white shadow-md shadow-indigo-200 group-hover:scale-105 transition-transform">
-                <BookOpen className="w-5 h-5 text-indigo-100" />
+              <div className="w-10 h-10 rounded-xl bg-emerald-800 flex items-center justify-center text-white shadow-md shadow-emerald-200 group-hover:scale-105 transition-transform">
+                <BookOpen className="w-5 h-5 text-emerald-100" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="text-xl font-extrabold tracking-tight bg-gradient-to-r from-slate-900 via-indigo-950 to-indigo-700 bg-clip-text text-transparent">
-                    CAMPUSLOOP
-                  </span>
-                  <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200/60 hidden sm:inline">
-                    v1.0
+                  <span className="text-xl font-semibold tracking-tight text-emerald-950">
+                    CampusLoop
                   </span>
                 </div>
                 <p className="text-[11px] font-medium text-slate-500 tracking-wide">
-                  Learn. Share. Earn. Grow.
+                  Your campus, connected.
                 </p>
               </div>
             </div>
 
-            {/* Navigation tabs */}
-            <nav className="hidden md:flex items-center space-x-1 pl-4 border-l border-slate-200">
-              <button
-                onClick={() => setActiveTab('books')}
-                className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5 ${
-                  activeTab === 'books'
-                    ? 'bg-indigo-50 text-indigo-700'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                }`}
-              >
-                <BookOpen className="w-4 h-4" />
-                Book Exchange
-              </button>
 
-              <button
-                onClick={() => setActiveTab('mentoring')}
-                className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5 relative ${
-                  activeTab === 'mentoring'
-                    ? 'bg-indigo-50 text-indigo-700'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                }`}
-              >
-                <GraduationCap className="w-4 h-4 text-violet-500" />
-                <span>Peer Mentoring</span>
-                {(incomingRequestsCount > 0 || awaitingLearnerConfirmCount > 0) && (
-                  <span className="w-2 h-2 rounded-full bg-amber-500 ring-2 ring-white"></span>
-                )}
-                {incomingRequestsCount > 0 && (
-                  <span className="text-[10px] bg-amber-100 text-amber-900 font-bold px-1.5 py-0.2 rounded-full">
-                    {incomingRequestsCount} new
-                  </span>
-                )}
-                {awaitingLearnerConfirmCount > 0 && (
-                  <span className="text-[10px] bg-emerald-100 text-emerald-900 font-bold px-1.5 py-0.2 rounded-full animate-pulse">
-                    Action req
-                  </span>
-                )}
-              </button>
-
-              <button
-                onClick={() => setActiveTab('rewards')}
-                className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5 relative ${
-                  activeTab === 'rewards'
-                    ? 'bg-amber-50 text-amber-900 font-bold'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                }`}
-              >
-                <Gift className="w-4 h-4 text-amber-500" />
-                <span>Rewards & Canteen</span>
-                {hasFreebieReady && (
-                  <span className="text-[10px] bg-amber-200 text-amber-900 font-bold px-1.5 py-0.2 rounded-full animate-bounce">
-                    Freebie
-                  </span>
-                )}
-              </button>
-
-              <button
-                onClick={() => setActiveTab('impact')}
-                className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5 ${
-                  activeTab === 'impact'
-                    ? 'bg-emerald-50 text-emerald-900 font-bold'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                }`}
-              >
-                <TrendingUp className="w-4 h-4 text-emerald-600" />
-                <span>Campus Impact</span>
-              </button>
-
-              <button
-                onClick={() => setActiveTab('loop_ai')}
-                className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5 ${
-                  activeTab === 'loop_ai'
-                    ? 'bg-purple-50 text-purple-900 font-bold shadow-xs'
-                    : 'text-purple-700 hover:text-purple-950 hover:bg-purple-50/60'
-                }`}
-              >
-                <Sparkles className="w-4 h-4 text-purple-600 animate-pulse" />
-                <span>Loop AI</span>
-                <span className="text-[9px] bg-purple-100 text-purple-800 font-mono px-1 rounded uppercase">
-                  Thinking
-                </span>
-              </button>
-
-              <button
-                onClick={() => setActiveTab('activity')}
-                className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5 relative ${
-                  activeTab === 'activity'
-                    ? 'bg-indigo-50 text-indigo-700'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                }`}
-              >
-                <Layers className="w-4 h-4" />
-                <span>My Activity</span>
-                {(pendingHandoversForMe > 0 || myReservationsPending > 0) && (
-                  <span className="w-2 h-2 rounded-full bg-amber-500 ring-2 ring-white"></span>
-                )}
-              </button>
-
-              <button
-                onClick={() => setActiveTab('wallet')}
-                className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5 ${
-                  activeTab === 'wallet'
-                    ? 'bg-indigo-50 text-indigo-700'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                }`}
-              >
-                <Coins className="w-4 h-4 text-amber-500" />
-                <span>Wallet & Ledger</span>
-              </button>
-
-              {currentUser.roles.includes('admin') && (
-                <button
-                  onClick={() => setActiveTab('admin')}
-                  className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5 ${
-                    activeTab === 'admin'
-                      ? 'bg-rose-50 text-rose-700'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                  }`}
-                >
-                  <Shield className="w-4 h-4 text-rose-600" />
-                  <span>Admin Audit</span>
-                </button>
-              )}
-            </nav>
           </div>
 
           {/* Right Header Controls */}
-          <div className="flex items-center gap-3">
+          <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-start sm:gap-3">
+            {/* Language Selector Dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setShowLanguageDropdown(!showLanguageDropdown)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-colors shadow-2xs"
+                title="Change interface language" aria-label="Change interface language" aria-expanded={showLanguageDropdown}
+              >
+                <span className="text-sm">{currentLanguage.flag}</span>
+                <span className="hidden xl:inline">{currentLanguage.nativeName}</span>
+                <ChevronDown className="w-3 h-3 text-slate-400" />
+              </button>
+
+              {showLanguageDropdown && (
+                <div className="absolute right-0 mt-2 w-56 bg-white rounded-2xl shadow-2xl border border-slate-200 py-2 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
+                  <div className="px-3 py-1.5 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+                    <span>Interface language</span>
+                    
+                  </div>
+                  <div className="max-h-64 overflow-y-auto divide-y divide-slate-50 py-1">
+                    {supportedLanguages.map((lang) => (
+                      <button
+                        key={lang.code}
+                        onClick={() => {
+                          setLanguageByCode(lang.code);
+                          setShowLanguageDropdown(false);
+                        }}
+                        className={`w-full px-3 py-2 text-left text-xs flex items-center justify-between hover:bg-emerald-50/70 transition-colors ${
+                          currentLanguage.code === lang.code
+                            ? 'bg-emerald-50 text-emerald-800 font-bold'
+                            : 'text-slate-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-base">{lang.flag}</span>
+                          <div>
+                            <span className="font-semibold">{lang.name}</span>
+                            <span className="text-[10px] text-slate-400 ml-1.5">
+                              ({lang.nativeName})
+                            </span>
+                          </div>
+                        </div>
+                        {currentLanguage.code === lang.code && (
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Accessibility Suite Button (Visual & Auditorily impaired Accessible) */}
+            <button
+              onClick={() => setIsA11yModalOpen(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-emerald-200/80 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 text-xs font-bold transition-all shadow-2xs"
+              title="Accessibility tools" aria-label="Accessibility tools"
+            >
+              <Eye className="w-3.5 h-3.5 text-emerald-600" />
+              <span className="hidden lg:inline">Accessibility</span>
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+            </button>
+
             {/* List Book CTA Button */}
             <button
               onClick={onOpenListingModal}
               className={`hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm transition-all ${
                 canListBooks
-                  ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200 hover:shadow-indigo-300'
+                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200 hover:shadow-emerald-300'
                   : 'bg-slate-100 text-slate-500 hover:bg-slate-200 cursor-pointer'
               }`}
               title={
@@ -238,13 +205,15 @@ export const Navbar: React.FC<NavbarProps> = ({
               }
             >
               <PlusCircle className="w-3.5 h-3.5" />
-              <span>List a Book</span>
+              <span>{t('nav.list_book', 'List a Book')}</span>
             </button>
 
             {/* Campus Credits Pill */}
             <div
+              role="button" tabIndex={0} aria-label="View your credits"
+              onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setActiveTab('wallet'); } }}
               onClick={() => setActiveTab('wallet')}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-gradient-to-r from-amber-50 to-amber-100/70 border border-amber-200/80 text-amber-900 font-bold text-xs shadow-xs cursor-pointer hover:bg-amber-100 transition-colors"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-stone-50 border border-amber-200/80 text-amber-900 font-bold text-xs shadow-xs cursor-pointer hover:bg-amber-100 transition-colors"
               title="Click to view transaction ledger"
             >
               <div className="w-5 h-5 rounded-full bg-amber-400 flex items-center justify-center text-amber-950 shadow-inner">
@@ -254,7 +223,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 {currentUser.credits.toLocaleString()}
               </span>
               <span className="text-[10px] text-amber-700 font-semibold uppercase tracking-wider">
-                Credits
+                {t('nav.credits', 'Credits')}
               </span>
             </div>
 
@@ -263,7 +232,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 onClick={() => setShowNotifications(!showNotifications)}
                 className="p-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 relative transition-colors"
-                title="Notifications"
+                title="Notifications" aria-label="Notifications" aria-expanded={showNotifications}
               >
                 <Bell className="w-4 h-4" />
                 {unreadCount > 0 && (
@@ -281,7 +250,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     {userNotifications.length > 0 && (
                       <button
                         onClick={clearNotifications}
-                        className="text-[10px] text-indigo-600 hover:underline"
+                        className="text-[10px] text-emerald-600 hover:underline"
                       >
                         Clear all
                       </button>
@@ -298,7 +267,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                           key={n.id}
                           onClick={() => markNotificationAsRead(n.id)}
                           className={`p-3 text-xs cursor-pointer hover:bg-slate-50 transition-colors ${
-                            !n.read ? 'bg-indigo-50/40' : ''
+                            !n.read ? 'bg-emerald-50/40' : ''
                           }`}
                         >
                           <div className="flex items-center justify-between font-semibold text-slate-800 mb-0.5">
@@ -333,9 +302,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <span>{currentUser.name}</span>
                 </div>
                 <div className="text-[11px] font-medium text-slate-500 flex items-center gap-1">
-                  <span className="text-indigo-600 font-semibold">{currentUser.grade}</span>
+                  <span className="text-emerald-600 font-semibold">{currentUser.grade}</span>
                   {currentUser.isVerifiedMentor && (
-                    <span className="text-[9px] px-1 py-0.2 rounded bg-purple-100 text-purple-800 font-medium">
+                    <span className="text-[9px] px-1 py-0.2 rounded bg-emerald-100 text-emerald-800 font-medium">
                       Verified Mentor
                     </span>
                   )}
@@ -350,23 +319,145 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         </div>
 
+            {/* Navigation tabs */}
+            <nav className="hidden md:flex items-center gap-1 py-2 border-t border-slate-200 overflow-x-auto [&>button]:shrink-0">
+              <button
+                onClick={() => setActiveTab('books')}
+                className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5 ${
+                  activeTab === 'books'
+                    ? 'bg-emerald-50 text-emerald-700'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+              >
+                <BookOpen className="w-4 h-4" />
+                <span>{t('nav.book_exchange', 'Book Exchange')}</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('mentoring')}
+                className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5 relative ${
+                  activeTab === 'mentoring'
+                    ? 'bg-emerald-50 text-emerald-700'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+              >
+                <GraduationCap className="w-4 h-4 text-violet-500" />
+                <span>{t('nav.peer_mentoring', 'Peer Mentoring')}</span>
+                {(incomingRequestsCount > 0 || awaitingLearnerConfirmCount > 0) && (
+                  <span className="w-2 h-2 rounded-full bg-amber-500 ring-2 ring-white"></span>
+                )}
+                {incomingRequestsCount > 0 && (
+                  <span className="text-[10px] bg-amber-100 text-amber-900 font-bold px-1.5 py-0.2 rounded-full">
+                    {incomingRequestsCount} new
+                  </span>
+                )}
+                {awaitingLearnerConfirmCount > 0 && (
+                  <span className="text-[10px] bg-emerald-100 text-emerald-900 font-bold px-1.5 py-0.2 rounded-full">
+                    Action req
+                  </span>
+                )}
+              </button>
+
+              <button
+                onClick={() => setActiveTab('rewards')}
+                className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5 relative ${
+                  activeTab === 'rewards'
+                    ? 'bg-amber-50 text-amber-900 font-bold'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+              >
+                <Gift className="w-4 h-4 text-amber-500" />
+                <span>{t('nav.rewards', 'Rewards & Canteen')}</span>
+                {hasFreebieReady && (
+                  <span className="text-[10px] bg-amber-200 text-amber-900 font-bold px-1.5 py-0.2 rounded-full">
+                    Freebie
+                  </span>
+                )}
+              </button>
+
+              <button
+                onClick={() => setActiveTab('impact')}
+                className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5 ${
+                  activeTab === 'impact'
+                    ? 'bg-emerald-50 text-emerald-900 font-bold'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+              >
+                <TrendingUp className="w-4 h-4 text-emerald-600" />
+                <span>{t('nav.impact', 'Campus Impact')}</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('loop_ai')}
+                className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5 ${
+                  activeTab === 'loop_ai'
+                    ? 'bg-emerald-50 text-emerald-900 font-bold shadow-xs'
+                    : 'text-emerald-700 hover:text-emerald-950 hover:bg-emerald-50/60'
+                }`}
+              >
+                <Sparkles className="w-4 h-4 text-emerald-600" />
+                <span>{t('nav.loop_ai', 'Loop AI')}</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('activity')}
+                className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5 relative ${
+                  activeTab === 'activity'
+                    ? 'bg-emerald-50 text-emerald-700'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+              >
+                <Layers className="w-4 h-4" />
+                <span>{t('nav.my_activity', 'My Activity')}</span>
+                {(pendingHandoversForMe > 0 || myReservationsPending > 0) && (
+                  <span className="w-2 h-2 rounded-full bg-amber-500 ring-2 ring-white"></span>
+                )}
+              </button>
+
+              <button
+                onClick={() => setActiveTab('wallet')}
+                className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5 ${
+                  activeTab === 'wallet'
+                    ? 'bg-emerald-50 text-emerald-700'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+              >
+                <Coins className="w-4 h-4 text-amber-500" />
+                <span>{t('nav.wallet', 'Wallet & Ledger')}</span>
+              </button>
+
+              {currentUser.roles.includes('admin') && (
+                <button
+                  onClick={() => setActiveTab('admin')}
+                  className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5 ${
+                    activeTab === 'admin'
+                      ? 'bg-rose-50 text-rose-700'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  }`}
+                >
+                  <Shield className="w-4 h-4 text-rose-600" />
+                  <span>Admin Audit</span>
+                </button>
+              )}
+            </nav>
+
         {/* Mobile Navigation bar */}
         <div className="flex md:hidden items-center justify-around py-2 border-t border-slate-100 text-[11px] font-medium overflow-x-auto gap-1">
           <button
             onClick={() => setActiveTab('books')}
             className={`py-1 px-2 rounded shrink-0 ${
-              activeTab === 'books' ? 'text-indigo-600 font-bold bg-indigo-50' : 'text-slate-600'
+              activeTab === 'books' ? 'text-emerald-600 font-bold bg-emerald-50' : 'text-slate-600'
             }`}
           >
-            Books
+            {t('nav.book_exchange', 'Books')}
           </button>
           <button
             onClick={() => setActiveTab('mentoring')}
             className={`py-1 px-2 rounded shrink-0 ${
-              activeTab === 'mentoring' ? 'text-indigo-600 font-bold bg-indigo-50' : 'text-slate-600'
+              activeTab === 'mentoring' ? 'text-emerald-600 font-bold bg-emerald-50' : 'text-slate-600'
             }`}
           >
-            Mentoring
+            {t('nav.peer_mentoring', 'Mentoring')}
           </button>
           <button
             onClick={() => setActiveTab('rewards')}
@@ -374,7 +465,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               activeTab === 'rewards' ? 'text-amber-800 font-bold bg-amber-50' : 'text-slate-600'
             }`}
           >
-            Rewards
+            {t('nav.rewards', 'Rewards')}
           </button>
           <button
             onClick={() => setActiveTab('impact')}
@@ -382,24 +473,28 @@ export const Navbar: React.FC<NavbarProps> = ({
               activeTab === 'impact' ? 'text-emerald-800 font-bold bg-emerald-50' : 'text-slate-600'
             }`}
           >
-            Impact
+            {t('nav.impact', 'Impact')}
           </button>
           <button
             onClick={() => setActiveTab('loop_ai')}
             className={`py-1 px-2 rounded shrink-0 ${
-              activeTab === 'loop_ai' ? 'text-purple-800 font-bold bg-purple-50' : 'text-purple-600'
+              activeTab === 'loop_ai' ? 'text-emerald-800 font-bold bg-emerald-50' : 'text-emerald-600'
             }`}
           >
-            AI
+            {t('nav.loop_ai_short', 'AI')}
+          </button>
+          <button onClick={() => setActiveTab('activity')} className={`py-1 px-2 rounded shrink-0 ${activeTab === 'activity' ? 'text-emerald-700 font-bold bg-emerald-50' : 'text-slate-600'}`}>
+            {t('nav.my_activity', 'My Activity')}
           </button>
           <button
             onClick={() => setActiveTab('wallet')}
             className={`py-1 px-2 rounded shrink-0 ${
-              activeTab === 'wallet' ? 'text-indigo-600 font-bold bg-indigo-50' : 'text-slate-600'
+              activeTab === 'wallet' ? 'text-emerald-600 font-bold bg-emerald-50' : 'text-slate-600'
             }`}
           >
-            Wallet
+            {t('nav.wallet', 'Wallet')}
           </button>
+          {currentUser.roles.includes('admin') && <button onClick={() => setActiveTab('admin')} className={`py-1 px-2 rounded shrink-0 ${activeTab === 'admin' ? 'text-emerald-700 font-bold bg-emerald-50' : 'text-slate-600'}`}>Admin Audit</button>}
         </div>
       </div>
     </header>

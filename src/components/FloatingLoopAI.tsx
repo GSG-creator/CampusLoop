@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import {
   Sparkles,
+  MessageCircle,
   X,
   Minimize2,
   Maximize2,
@@ -234,15 +235,14 @@ export const FloatingLoopAI: React.FC<FloatingLoopAIProps> = ({ onNavigateTab })
               setIsOpen(true);
               setIsMinimized(false);
             }}
-            className="group relative flex items-center gap-2.5 px-4 py-3 rounded-full bg-gradient-to-r from-purple-600 via-indigo-600 to-indigo-700 text-white shadow-xl hover:shadow-2xl hover:scale-105 active:scale-95 transition-all duration-200 border-2 border-white/20"
+            className="group relative flex items-center gap-2.5 px-4 py-3 rounded-full bg-slate-800 text-white shadow-md hover:bg-slate-700 transition-colors border border-white/20"
             title="Open LOOP AI Campus Copilot"
           >
             <div className="relative">
-              <Sparkles className="w-5 h-5 text-amber-300 animate-pulse" />
-              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-indigo-700" />
+              <MessageCircle className="w-5 h-5" />
             </div>
             <div className="text-left">
-              <span className="text-xs font-black tracking-wide block">LOOP AI</span>
+              <span className="text-sm font-semibold block">Ask Loop AI</span>
               <span className="text-[10px] text-purple-200 block font-medium leading-none">
                 {currentUser.name.split(' ')[0]} • {currentUser.grade || 'Campus'}
               </span>
@@ -259,16 +259,16 @@ export const FloatingLoopAI: React.FC<FloatingLoopAIProps> = ({ onNavigateTab })
           }`}
         >
           {/* Header */}
-          <div className="bg-gradient-to-r from-purple-900 via-indigo-900 to-slate-900 p-3.5 text-white flex items-center justify-between shrink-0 select-none">
+          <div className="bg-slate-800 p-3.5 text-white flex items-center justify-between shrink-0 select-none">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-xl bg-purple-500/20 border border-purple-400/30 flex items-center justify-center text-amber-300">
                 <Brain className="w-4 h-4" />
               </div>
               <div>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-black tracking-wide">LOOP AI</span>
+                  <span className="text-sm font-semibold">Loop AI</span>
                   <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-purple-500/30 text-purple-200 border border-purple-400/20">
-                    Role-Aware
+                    Campus helper
                   </span>
                 </div>
                 <span className="text-[10px] text-slate-300 block">

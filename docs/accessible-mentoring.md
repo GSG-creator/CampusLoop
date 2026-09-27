@@ -10,7 +10,7 @@ Recognized topics include a worked starter, a similar guided task and a choice o
 
 An unrecognized topic does not silently receive a science or mathematics exercise. The plan asks the mentor to supply a teacher-aligned example with checked reasoning and an answer. For every topic, the mentor should adapt or replace the starter to fit the learner’s goal and the teacher’s curriculum. The learner can observe, indicate a useful step, repeat a familiar task or try a variation; moving to a harder task is not compulsory.
 
-Online sessions suggest agreeing an accessible platform and shared formats, including checking any captions, descriptions and response tools the learner needs. Offline sessions suggest checking the accessibility of the meeting space, desk, materials and preferred tools. These are planning prompts: CampusLoop does not provide video calling, captions, assistive technology or a physical venue. The selected mode does not change learning goals or infer ability.
+Online sessions suggest agreeing an accessible platform and shared formats, including checking any captions, descriptions and response tools the learner needs. Offline sessions suggest checking the accessibility of the meeting space, desk, materials and preferred tools. CampusLoop includes optional browser captions and text communication tools; availability depends on browser support and permission. It does not provide video calling or a physical venue. The selected mode does not change learning goals or infer ability.
 
 ## Teaching sources and how they inform the draft
 

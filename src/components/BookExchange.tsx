@@ -148,56 +148,33 @@ export const BookExchange: React.FC<BookExchangeProps> = ({ onOpenListingModal }
         </div>
       )}
 
-      {/* Hero Welcome & Role Guidance Banner */}
-      <div className="bg-gradient-to-r from-indigo-900 via-indigo-800 to-violet-900 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
-        <div className="absolute right-0 top-0 bottom-0 w-1/3 bg-radial from-white/10 to-transparent pointer-events-none" />
-        <div className="max-w-2xl relative z-10">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-white/15 backdrop-blur-md border border-white/20 text-indigo-100 mb-3">
-            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-            <span>Campus Book Exchange Hub</span>
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight mb-2">
-            Share textbooks. Empower your campus.
+      <section className="grid md:grid-cols-[1fr_260px] gap-8 items-center border-b border-slate-200 py-6 sm:py-8">
+        <div className="max-w-2xl">
+          <p className="text-sm text-slate-600 mb-3">The campus bookshelf</p>
+          <h1 className="campus-heading text-4xl sm:text-5xl leading-[1.1] text-slate-900 mb-4">
+            Good books deserve<br className="hidden sm:block" /> another chapter.
           </h1>
-          <p className="text-indigo-100/90 text-sm leading-relaxed mb-4">
-            Borrow verified reference books from seniors, donate your completed syllabus guides to earn <strong className="text-amber-300">+50 Campus Credits</strong>, or lend books for <strong className="text-sky-300">+20 Credits</strong> per cycle.
+          <p className="text-base text-slate-600 leading-relaxed max-w-lg">
+            Find a book you need. Pass one on when you’re done.
+            A little help from someone on campus goes a long way.
           </p>
-
-          {/* Persona-specific actionable prompt */}
-          <div className="p-3.5 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 text-xs">
-            <div className="font-bold flex items-center gap-1.5 text-white mb-1">
-              <span>Logged in as {currentUser.name}</span>
-              <span className="text-indigo-200">({currentUser.grade})</span>
-              <span className="text-amber-300 font-mono ml-auto">
-                {currentUser.credits.toLocaleString()} Credits
-              </span>
-            </div>
-            {currentUser.id === 'aarav' && (
-              <p className="text-indigo-100 text-[11px] leading-relaxed">
-                👉 <strong>Demo Guide:</strong> As Aarav (Junior), try reserving Meera's donated <em>RD Sharma Class 10</em> below. Then switch to <strong>Meera</strong> in the top bar to verify the handover and witness her receive <strong>+50 credits</strong>!
-              </p>
-            )}
-            {currentUser.id === 'meera' && (
-              <p className="text-indigo-100 text-[11px] leading-relaxed">
-                👉 <strong>Demo Guide:</strong> You own 3 seeded textbooks (RD Sharma, HC Verma, Oswaal Science). If Aarav reserved a book, click <strong>"Confirm Handover"</strong> to collect your <strong>+50 credit reward</strong>!
-              </p>
-            )}
-            {currentUser.id === 'rohan' && (
-              <p className="text-indigo-100 text-[11px] leading-relaxed">
-                👉 <strong>Demo Guide:</strong> You are at <strong>9,940 credits</strong>. Verified peer mentorship in Step 2 awards <strong>+70 credits</strong> to reach the coveted <strong>10,010 milestone</strong>!
-              </p>
-            )}
-            {currentUser.id === 'ananya' && (
-              <p className="text-indigo-100 text-[11px] leading-relaxed">
-                👉 <strong>Admin Oversight:</strong> Full audit authority to inspect reservations, verify handovers, or moderate listings.
-              </p>
-            )}
-          </div>
         </div>
-      </div>
+        <aside className="campus-note rounded-lg p-5 space-y-3">
+          <p className="font-semibold text-slate-800">Hi, {currentUser.name.split(' ')[0]}.</p>
+          <p className="text-sm text-slate-600 leading-relaxed">
+            {currentUser.id === 'aarav' ? 'Looking for a Class 10 book? Meera has a few to share. Open a listing and reserve one to try the demo.' :
+              currentUser.id === 'meera' ? 'Your books could help someone through their next exam. Check your activity to arrange a handover.' :
+              currentUser.id === 'rohan' ? 'A study session or a book you no longer need could make someone’s week a little easier.' :
+              'Keep an eye on campus activity and help students get the support they need.'}
+          </p>
+          <p className="border-t border-[#dfd9c7] pt-3 text-xs text-slate-600">
+            {currentUser.credits.toLocaleString()} campus credits · {currentUser.grade}
+          </p>
+        </aside>
+      </section>
 
       {/* Quick Stats Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="campus-stats grid grid-cols-2 sm:grid-cols-4 gap-y-2 py-1">
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
             <BookOpen className="w-5 h-5" />
@@ -248,7 +225,7 @@ export const BookExchange: React.FC<BookExchangeProps> = ({ onOpenListingModal }
       </div>
 
       {/* Search & Filter Toolbar */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+      <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-3">
         <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
           {/* Search bar */}
           <div className="relative flex-1">
@@ -257,7 +234,7 @@ export const BookExchange: React.FC<BookExchangeProps> = ({ onOpenListingModal }
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by title (e.g. RD Sharma), author (HC Verma), subject, or owner..."
+              placeholder="Search books, subjects or students"
               className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-50/50"
             />
             {searchQuery && (

@@ -1,5 +1,7 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { BookListing, User } from '../types';
+import { useTranslation } from '../context/LanguageContext';
+import { useAccessibility } from '../context/AccessibilityContext';
 import {
   BookOpen,
   Gift,
@@ -12,6 +14,10 @@ import {
   ShieldCheck,
   CornerDownRight,
   RotateCcw,
+  Languages,
+  Sparkles,
+  MessageSquare,
+  Hand,
 } from 'lucide-react';
 
 interface BookCardProps {
@@ -33,9 +39,51 @@ export const BookCard: React.FC<BookCardProps> = ({
   onCancelReservation,
   onOpenDetails,
 }) => {
+  const { currentLanguage, translateTextWithAI, t } = useTranslation();
+  const { openMuteHandoverModal, openSignLanguageModal, triggerVisualAlert } = useAccessibility();
+
+  const [translatedTitle, setTranslatedTitle] = useState<string | null>(null);
+  const [translatedDesc, setTranslatedDesc] = useState<string | null>(null);
+  const [isTranslatingCard, setIsTranslatingCard] = useState<boolean>(false);
+  const [translationError, setTranslationError] = useState('');
+  const translationRequest = useRef(0);
+  useEffect(() => {
+    translationRequest.current++;
+    setTranslatedTitle(null); setTranslatedDesc(null); setTranslationError(''); setIsTranslatingCard(false);
+    return () => { translationRequest.current++; };
+  }, [book.id, book.title, book.description, currentLanguage.code]);
+
   const isOwner = book.ownerId === currentUser.id;
   const isReserver = book.reservedByUserId === currentUser.id;
   const isAdmin = currentUser.roles.includes('admin');
+
+  const handleTranslateCard = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (translatedTitle) {
+      // Toggle back to original
+      setTranslatedTitle(null);
+      setTranslatedDesc(null);
+      return;
+    }
+
+    setIsTranslatingCard(true);
+    setTranslationError('');
+    const request = ++translationRequest.current;
+    try {
+      const [titleRes, descRes] = await Promise.all([
+        translateTextWithAI(book.title, currentLanguage.name),
+        translateTextWithAI(book.description, currentLanguage.name),
+      ]);
+      if (request !== translationRequest.current) return;
+      setTranslatedTitle(titleRes);
+      setTranslatedDesc(descRes);
+      triggerVisualAlert('info', `Translated "${book.title}" into ${currentLanguage.name}`);
+    } catch {
+      if (request === translationRequest.current) setTranslationError('Translation is unavailable. Showing the original text.');
+    } finally {
+      if (request === translationRequest.current) setIsTranslatingCard(false);
+    }
+  };
 
   // Condition color
   const getConditionColor = (cond: string) => {
@@ -60,48 +108,68 @@ export const BookCard: React.FC<BookCardProps> = ({
           {book.listingType === 'donate' && (
             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-white/20 backdrop-blur-md text-white border border-white/30">
               <Gift className="w-3 h-3 text-emerald-300" />
-              <span>Free Donation</span>
+              <span>{t('common.free_donation', 'Free Donation')}</span>
             </span>
           )}
           {book.listingType === 'rent' && (
             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-white/20 backdrop-blur-md text-white border border-white/30">
               <Clock className="w-3 h-3 text-sky-300" />
-              <span>Lend / Rent</span>
+              <span>{t('common.lend_rent', 'Lend / Rent')}</span>
             </span>
           )}
           {book.listingType === 'sell' && (
             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-white/20 backdrop-blur-md text-white border border-white/30">
               <Tag className="w-3 h-3 text-amber-300" />
-              <span>Pre-Loved Sale</span>
+              <span>{t('common.preloved_sale', 'Pre-Loved Sale')}</span>
             </span>
           )}
 
-          {/* Status Badge */}
-          {book.status === 'available' && (
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-emerald-500 text-white shadow-xs">
-              Available
-            </span>
-          )}
-          {book.status === 'reserved' && (
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-amber-500 text-white shadow-xs">
-              Reserved
-            </span>
-          )}
-          {book.status === 'lent_out' && (
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-sky-600 text-white shadow-xs">
-              Lent Out
-            </span>
-          )}
-          {book.status === 'donated' && (
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-teal-600 text-white shadow-xs">
-              Donated
-            </span>
-          )}
-          {book.status === 'sold' && (
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-slate-600 text-white shadow-xs">
-              Sold
-            </span>
-          )}
+          {/* Quick Language / Accessibility icons on cover */}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={handleTranslateCard}
+              disabled={isTranslatingCard}
+              className={`p-1.5 rounded-full backdrop-blur-md transition-colors ${
+                translatedTitle
+                  ? 'bg-amber-400 text-amber-950 font-bold'
+                  : 'bg-black/20 hover:bg-black/40 text-white'
+              }`}
+              title={
+                translatedTitle
+                  ? 'Revert to original text'
+                  : `Translate with Gemini AI into ${currentLanguage.name}`
+              }
+            >
+              <Languages className={`w-3.5 h-3.5 ${isTranslatingCard ? 'animate-spin' : ''}`} />
+            </button>
+
+            {/* Status Badge */}
+            {book.status === 'available' && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-emerald-500 text-white shadow-xs">
+                Available
+              </span>
+            )}
+            {book.status === 'reserved' && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-amber-500 text-white shadow-xs">
+                Reserved
+              </span>
+            )}
+            {book.status === 'lent_out' && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-sky-600 text-white shadow-xs">
+                Lent Out
+              </span>
+            )}
+            {book.status === 'donated' && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-teal-600 text-white shadow-xs">
+                Donated
+              </span>
+            )}
+            {book.status === 'sold' && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-slate-600 text-white shadow-xs">
+                Sold
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Grade & Subject Pill on Cover */}
@@ -120,10 +188,17 @@ export const BookCard: React.FC<BookCardProps> = ({
               onClick={() => onOpenDetails(book)}
               className="font-bold text-slate-900 text-base leading-snug group-hover:text-indigo-600 cursor-pointer transition-colors line-clamp-2"
             >
-              {book.title}
+              {translatedTitle || book.title}
             </h3>
           </div>
+          {translatedTitle && (
+            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-indigo-600 mb-1">
+              <Sparkles className="w-3 h-3 text-indigo-500" />
+              <span>Translated to {currentLanguage.name} via AI</span>
+            </span>
+          )}
           <p className="text-xs text-slate-500 mb-2 font-medium">By {book.author}</p>
+          {translationError && <p role="status" className="mb-2 text-xs text-amber-900">{translationError}</p>}
 
           <div className="flex flex-wrap items-center gap-1.5 mb-3">
             <span
@@ -152,7 +227,7 @@ export const BookCard: React.FC<BookCardProps> = ({
           </div>
 
           <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed mb-3">
-            {book.description}
+            {translatedDesc || book.description}
           </p>
         </div>
 
@@ -187,13 +262,31 @@ export const BookCard: React.FC<BookCardProps> = ({
           {/* Reserved Status info message if reserved */}
           {book.status === 'reserved' && (
             <div className="mb-2 p-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-[11px]">
-              <div className="flex items-center gap-1 font-semibold">
-                <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                <span>
-                  {isReserver
-                    ? 'You have reserved this book!'
-                    : `Reserved by ${book.reservedByUserName || 'student'}`}
-                </span>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1 font-semibold">
+                  <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                  <span>
+                    {isReserver
+                      ? 'You have reserved this book!'
+                      : `Reserved by ${book.reservedByUserName || 'student'}`}
+                  </span>
+                </div>
+
+                {/* Direct Mute Handover Button for reserved book */}
+                <button
+                  onClick={() =>
+                    openMuteHandoverModal({
+                      bookTitle: book.title,
+                      bookId: book.id,
+                      partnerName: isOwner ? book.reservedByUserName : book.ownerName,
+                    })
+                  }
+                  className="px-2 py-0.5 rounded bg-amber-200 hover:bg-amber-300 text-amber-900 font-bold text-[10px] flex items-center gap-1 transition-colors"
+                  title="Show Big Screen Handover Card to peer"
+                >
+                  <MessageSquare className="w-3 h-3" />
+                  <span>Mute Card</span>
+                </button>
               </div>
               <p className="text-[10px] text-amber-700 mt-0.5">
                 {isOwner
@@ -235,7 +328,7 @@ export const BookCard: React.FC<BookCardProps> = ({
               onClick={() => onOpenDetails(book)}
               className="flex-1 py-1.5 px-2.5 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-semibold transition-colors text-center"
             >
-              Details
+              {t('common.details', 'Details')}
             </button>
 
             {/* Action 1: Reserve (Available & Not Owner) */}
@@ -244,7 +337,7 @@ export const BookCard: React.FC<BookCardProps> = ({
                 onClick={() => onReserve(book.id)}
                 className="flex-1 py-1.5 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs hover:shadow transition-all flex items-center justify-center gap-1"
               >
-                <span>Reserve</span>
+                <span>{t('common.reserve', 'Reserve')}</span>
                 <ArrowRight className="w-3 h-3" />
               </button>
             )}

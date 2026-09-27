@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import React from 'react';
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
-import { AppProvider, useApp } from '../context/AppContext';
+import { useApp } from '../context/AppContext';
+import { TestProviders } from './testProviders';
 import { LearningPlanPanel, SessionMeetingDetails } from '../components/LearningPlanPanel';
 import { MentoringView } from '../components/MentoringView';
 import { AdminAuditView } from '../components/AdminAuditView';
@@ -37,7 +38,7 @@ async function mount(element: React.ReactElement, sessions = [session()], user =
   const storage = new Map(Object.entries(fixtures).map(([key, value]) => [`CAMPUSLOOP_STATE_V3_${key}`, typeof value === 'string' ? value : JSON.stringify(value)]));
   Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => storage.set(key, value) } });
   function Probe() { app = useApp(); return null; }
-  await act(async () => { renderer = create(<AppProvider><Probe />{element}</AppProvider>); });
+  await act(async () => { renderer = create(<TestProviders><Probe />{element}</TestProviders>); });
   return storage;
 }
 afterEach(async () => { await act(async () => renderer?.unmount()); });
