@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { getQuizForTopic } from '../data/quizBank';
+import { LoopAiActionCard } from '../types';
 import {
   X,
   GraduationCap,
@@ -20,42 +21,45 @@ interface RequestMentoringModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: (msg: string) => void;
+  initialDraft?: NonNullable<LoopAiActionCard['draftMentoringData']>;
 }
 
-export const RequestMentoringModal: React.FC<RequestMentoringModalProps> = ({
-  isOpen,
+export const RequestMentoringModal: React.FC<RequestMentoringModalProps> = (props) =>
+  props.isOpen ? <RequestMentoringForm {...props} /> : null;
+
+const RequestMentoringForm: React.FC<RequestMentoringModalProps> = ({
   onClose,
   onSuccess,
+  initialDraft,
 }) => {
   const { users, currentUser, requestMentoringSession } = useApp();
 
   // Form State
-  const [subject, setSubject] = useState('Mathematics');
-  const [topic, setTopic] = useState('Applications of Trigonometry');
-  const [grade, setGrade] = useState('Grade 10');
+  const [subject, setSubject] = useState(initialDraft?.subject ?? 'Mathematics');
+  const [topic, setTopic] = useState(initialDraft?.topic ?? 'Applications of Trigonometry');
+  const [grade, setGrade] = useState(initialDraft?.grade ?? currentUser.grade);
   const [date, setDate] = useState(() => {
+    if (initialDraft) return initialDraft.date;
     const d = new Date();
     d.setDate(d.getDate() + 1);
-    return d.toISOString().split('T')[0];
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   });
-  const [time, setTime] = useState('16:30');
+  const [time, setTime] = useState(initialDraft?.time ?? '16:30');
   const [description, setDescription] = useState(
-    'Need help understanding angles of elevation and heights & distances problems for board preparation.'
+    initialDraft?.description ?? 'Need help understanding angles of elevation and heights & distances problems for board preparation.'
   );
-  const [selectedMentorId, setSelectedMentorId] = useState('rohan');
+  const [selectedMentorId, setSelectedMentorId] = useState(initialDraft?.mentorId ?? 'rohan');
 
   // Step in modal: 1 = Details, 2 = Baseline Quiz
   const [step, setStep] = useState<1 | 2>(1);
   const [baselineAnswers, setBaselineAnswers] = useState<number[]>([-1, -1, -1]);
   const [errorMsg, setErrorMsg] = useState('');
 
-  if (!isOpen) return null;
-
   // Filter verified mentors
   const verifiedMentors = Object.values(users).filter(
     (u) =>
       u.id !== currentUser.id &&
-      (u.isVerifiedMentor || u.roles.includes('mentor'))
+      u.isVerifiedMentor === true
   );
 
   const quizQuestions = getQuizForTopic(topic);
@@ -76,15 +80,16 @@ export const RequestMentoringModal: React.FC<RequestMentoringModalProps> = ({
   };
 
   const handleSeedBaseline1of3 = () => {
-    // Q1 correct = 1 (20√3 m), Q2 incorrect = 0 (1:2 instead of 1:1), Q3 incorrect = 1 (120m instead of 40√3m)
-    setBaselineAnswers([1, 0, 1]);
+    setBaselineAnswers(quizQuestions.map((question, index) => index === 0
+      ? question.correctOptionIndex
+      : (question.correctOptionIndex + 1) % question.options.length));
   };
 
   const handleNextToQuiz = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
 
-    if (!selectedMentorId) {
+    if (!verifiedMentors.some((mentor) => mentor.id === selectedMentorId)) {
       setErrorMsg('Please select a verified mentor.');
       return;
     }
@@ -196,6 +201,9 @@ export const RequestMentoringModal: React.FC<RequestMentoringModalProps> = ({
                 Select Verified Mentor *
               </label>
               <div className="space-y-2">
+                {verifiedMentors.length === 0 && (
+                  <p className="text-xs text-slate-500">No verified mentors are available for this account.</p>
+                )}
                 {verifiedMentors.map((mentor) => {
                   const isSelected = selectedMentorId === mentor.id;
                   return (
@@ -263,7 +271,10 @@ export const RequestMentoringModal: React.FC<RequestMentoringModalProps> = ({
                   type="text"
                   required
                   value={topic}
-                  onChange={(e) => setTopic(e.target.value)}
+                  onChange={(e) => {
+                    setTopic(e.target.value);
+                    setBaselineAnswers([-1, -1, -1]);
+                  }}
                   placeholder="e.g. Applications of Trigonometry"
                   className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-indigo-500"
                 />

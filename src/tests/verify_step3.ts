@@ -311,4 +311,4 @@ export function runStep3Tests() {
   return { passed, failed };
 }
 
-runStep3Tests();
+if (runStep3Tests().failed > 0) process.exitCode = 1;

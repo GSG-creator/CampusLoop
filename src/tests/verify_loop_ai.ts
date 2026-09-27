@@ -253,4 +253,4 @@ export function runLoopAiVerification() {
   return { passed, failed };
 }
 
-runLoopAiVerification();
+if (runLoopAiVerification().failed > 0) process.exitCode = 1;

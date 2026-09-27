@@ -2,12 +2,12 @@ import {
   BookListing,
   User,
   MentoringSession,
-  RewardTier,
   LoopAiActionCard,
   LoopAiMessage,
   LoopAiQuizQuestion,
 } from '../types';
 import { getUserTier } from '../data/rewardData';
+import { createId } from '../utils/ids';
 
 export interface LoopAiContext {
   currentUser: User;
@@ -52,10 +52,10 @@ export const PRACTICE_QUIZZES: Record<string, LoopAiQuizQuestion[]> = {
     },
     {
       id: 'quiz-phys-2',
-      question: 'A ray of light traveling from glass (n = 1.5) into air bends:',
+      question: 'A ray of light travels from glass (n = 1.5) into air at a nonzero angle below the critical angle. It bends:',
       options: ['Towards the normal', 'Away from the normal', 'Does not bend', 'Reflects 100% at all angles'],
       correctIndex: 1,
-      explanation: 'When light travels from an optically denser medium to a rarer medium, it speeds up and bends away from the normal.',
+      explanation: 'Below the critical angle, a ray entering a rarer medium bends away from the normal. At normal incidence it does not bend; above the critical angle, total internal reflection occurs.',
     },
   ],
 };
@@ -64,20 +64,19 @@ export const PRACTICE_QUIZZES: Record<string, LoopAiQuizQuestion[]> = {
  * Perform exact database searches across active CampusLoop data.
  */
 export function searchBooksInStore(query: string, books: BookListing[]): BookListing[] {
-  const q = query.toLowerCase().trim();
-  if (!q) return [];
-  return books.filter((b) => {
-    return (
-      b.title.toLowerCase().includes(q) ||
-      b.author.toLowerCase().includes(q) ||
-      b.subject.toLowerCase().includes(q) ||
-      b.grade.toLowerCase().includes(q) ||
-      (q.includes('sharma') && b.title.toLowerCase().includes('sharma')) ||
-      (q.includes('verma') && b.title.toLowerCase().includes('verma')) ||
-      (q.includes('oswaal') && b.title.toLowerCase().includes('oswaal')) ||
-      (q.includes('math') && b.subject.toLowerCase().includes('math')) ||
-      (q.includes('physic') && b.subject.toLowerCase().includes('physic'))
-    );
+  if (!query.trim()) return [];
+  const normalize = (value: string) => value.toLowerCase()
+    .replace(/\b(?:[a-z]\.\s*){2,}/g, (initials) => initials.replace(/[.\s]/g, '') + ' ')
+    .replace(/\./g, '')
+    .replace(/\bclass\b/g, 'grade').replace(/\bmaths?\b/g, 'mathematics')
+    .replace(/[^a-z0-9]+/g, ' ').trim();
+  const ignored = new Set('a an the i me my can could would you please find search show want need looking for in on at of and to any is are do does have has there available book books textbook textbooks exchange campus'.split(' '));
+  const words = normalize(query).split(' ').filter((word) => !ignored.has(word));
+  const availableOnly = /\bavailable\b/i.test(query);
+  return books.filter((book) => {
+    if (availableOnly && book.status !== 'available') return false;
+    const haystack = normalize(`${book.title} ${book.author} ${book.subject} ${book.grade} ${(book.tags || []).join(' ')}`).split(' ');
+    return words.every((word) => haystack.includes(word));
   });
 }
 
@@ -85,9 +84,9 @@ export function searchBooksInStore(query: string, books: BookListing[]): BookLis
  * Find verified mentors in active users.
  */
 export function findVerifiedMentors(users: Record<string, User>, subjectQuery?: string): User[] {
-  const mentors = Object.values(users).filter((u) => u.isVerifiedMentor);
+  const mentors = Object.values(users).filter((u) => u.isVerifiedMentor === true && u.roles.includes('mentor'));
   if (!subjectQuery) return mentors;
-  const sq = subjectQuery.toLowerCase();
+  const sq = subjectQuery.toLowerCase().trim().replace(/^maths?$/, 'mathematics');
   return mentors.filter((m) =>
     (m.mentorSubjects || []).some((s) => s.toLowerCase().includes(sq))
   );
@@ -103,7 +102,6 @@ export function calculateWalletMilestone(credits: number) {
   const progressToVault = Math.min(100, Math.round((credits / targetThreshold) * 100));
 
   let creditsToNextTier = 0;
-  let nextTierName = 'Legend';
   if (tierInfo.nextThreshold) {
     creditsToNextTier = Math.max(0, tierInfo.nextThreshold - credits);
   }
@@ -210,22 +208,27 @@ export function buildActionCardsForQuery(
     q.includes('tutoring') ||
     q.includes('help') && (q.includes('math') || q.includes('physics') || q.includes('tomorrow') || q.includes('lunch'))
   ) {
-    const rohan = users['rohan'];
-    if (rohan && rohan.isVerifiedMentor) {
+    const subject = q.includes('physic') ? 'Physics'
+      : /math|trig/.test(q) ? 'Mathematics'
+      : ['Chemistry', 'Biology', 'English', 'Science'].find((name) => q.includes(name.toLowerCase()));
+    const mentors = findVerifiedMentors(users, subject).filter((mentor) => mentor.id !== context.currentUser.id);
+    const mentor = mentors[0];
+    if (mentor) {
       // Create a draft request card with explicit details
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
-      const dateStr = tomorrow.toISOString().split('T')[0];
+      const dateStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
+      const draftSubject = subject || mentor.mentorSubjects?.[0] || 'Mathematics';
 
-      cards.push({
+      if (/help|request|tutor|trig|book|schedule/.test(q)) cards.push({
         type: 'draft_mentoring',
         title: 'Draft Mentoring Request (Confirmation Required)',
         description: 'Review the details below. Junior peer mentoring sessions are 100% free of charge (0 CR cost).',
         draftMentoringData: {
-          mentorId: rohan.id,
-          mentorName: rohan.name,
-          subject: 'Mathematics',
-          topic: q.includes('trig') ? 'Applications of Trigonometry' : 'General Mathematics & Physics Help',
+          mentorId: mentor.id,
+          mentorName: mentor.name,
+          subject: draftSubject,
+          topic: q.includes('trig') ? 'Applications of Trigonometry' : `General ${draftSubject} Help`,
           date: dateStr,
           time: '12:30', // lunch time
           grade: context.currentUser.grade || 'Grade 10',
@@ -233,19 +236,23 @@ export function buildActionCardsForQuery(
         },
       });
 
-      // Also attach mentor profile card
-      cards.push({
-        type: 'mentor',
-        title: `Verified Mentor: ${rohan.name}`,
-        mentorData: {
-          id: rohan.id,
-          name: rohan.name,
-          avatar: rohan.avatar,
-          grade: rohan.grade,
-          subjects: rohan.mentorSubjects || ['Mathematics', 'Physics'],
-          rating: 4.9,
-          completedSessions: 18,
-        },
+      // Display ratings and session counts from the local records, not seed claims.
+      mentors.slice(0, 3).forEach((verifiedMentor) => {
+        const completed = context.sessions.filter((session) => session.mentorId === verifiedMentor.id && session.status === 'completed');
+        const ratings = completed.map((session) => session.rating).filter((rating): rating is number => typeof rating === 'number' && rating >= 1 && rating <= 5);
+        cards.push({
+          type: 'mentor',
+          title: `Verified Mentor: ${verifiedMentor.name}`,
+          mentorData: {
+            id: verifiedMentor.id,
+            name: verifiedMentor.name,
+            avatar: verifiedMentor.avatar,
+            grade: verifiedMentor.grade,
+            subjects: verifiedMentor.mentorSubjects || [],
+            rating: ratings.length ? Math.round(ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length * 10) / 10 : 0,
+            completedSessions: completed.length,
+          },
+        });
       });
     }
   }
@@ -292,13 +299,15 @@ export function buildActionCardsForQuery(
     q.includes('test') ||
     q.includes('questions')
   ) {
-    const questions = q.includes('physic') ? PRACTICE_QUIZZES.physics : PRACTICE_QUIZZES.trigonometry;
+    const isPhysics = q.includes('physic');
+    const questions = isPhysics ? PRACTICE_QUIZZES.physics : PRACTICE_QUIZZES.trigonometry;
+    const topic = isPhysics ? 'Physics: Motion & Light' : 'Applications of Trigonometry';
     cards.push({
       type: 'quiz',
-      title: 'Interactive Practice Quiz: Applications of Trigonometry',
+      title: `Interactive Practice Quiz: ${topic}`,
       quizData: {
-        topic: 'Applications of Trigonometry',
-        subject: 'Mathematics',
+        topic,
+        subject: isPhysics ? 'Physics' : 'Mathematics',
         questions,
       },
     });
@@ -311,8 +320,10 @@ export function buildActionCardsForQuery(
     q.includes('schedule')
   ) {
     const userSessions = context.sessions.filter(
-      (s) => (s.studentId === context.currentUser.id || s.mentorId === context.currentUser.id) && s.status !== 'completed'
-    );
+      (s) => (s.studentId === context.currentUser.id || s.mentorId === context.currentUser.id)
+        && (s.status === 'requested' || s.status === 'accepted')
+        && new Date(`${s.date}T${s.time}`).getTime() >= Date.now()
+    ).sort((a, b) => `${a.date}T${a.time}`.localeCompare(`${b.date}T${b.time}`));
     if (userSessions.length > 0) {
       userSessions.forEach((s) => {
         cards.push({
@@ -321,6 +332,13 @@ export function buildActionCardsForQuery(
           sessionData: s,
         });
       });
+    } else {
+      cards.push({
+        type: 'navigation',
+        title: 'No upcoming sessions',
+        description: 'You have no upcoming requested or accepted mentoring sessions.',
+        navigationData: [{ label: 'Open Peer Mentoring', tab: 'mentoring' }],
+      });
     }
   }
 
@@ -328,7 +346,8 @@ export function buildActionCardsForQuery(
 }
 
 /**
- * Dispatch query to server endpoint `/api/loop-ai` with robust session auth and fallback.
+ * Dispatch a query with explicitly untrusted demo context. Action cards remain
+ * local and always use application services for any user-confirmed mutations.
  */
 export async function sendLoopAiQuery(
   message: string,
@@ -336,91 +355,76 @@ export async function sendLoopAiQuery(
   users: Record<string, User>
 ): Promise<LoopAiMessage> {
   const cards = buildActionCardsForQuery(message, context, users);
+  const navigation: LoopAiActionCard[] = [{
+    type: 'navigation',
+    navigationData: [
+      { label: 'Browse Books', tab: 'books' },
+      { label: 'Peer Mentoring', tab: 'mentoring' },
+      { label: 'My Wallet', tab: 'wallet' },
+      { label: 'Canteen Rewards', tab: 'rewards' },
+    ],
+  }];
+  const messageMeta = () => ({
+    id: createId('msg'),
+    sender: 'assistant' as const,
+    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 25_000);
 
   try {
     const res = await fetch('/api/loop-ai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
       body: JSON.stringify({
         message,
-        auth: {
-          userId: context.currentUser.id,
+        demoContext: {
           userName: context.currentUser.name,
           grade: context.currentUser.grade,
           credits: context.currentUser.credits,
           roles: context.currentUser.roles,
           isVerifiedMentor: context.currentUser.isVerifiedMentor,
         },
-        clientIntentCards: cards,
       }),
     });
-
+    const data = await res.json();
     if (res.status === 429) {
-      const data = await res.json();
       return {
-        id: 'msg-' + Date.now(),
-        sender: 'assistant',
+        ...messageMeta(),
         status: 'rate_limited',
-        text: data.reply || 'You have exceeded the request limit for this minute. Please wait a moment before asking again.',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        actionCards: [
-          {
-            type: 'navigation',
-            navigationData: [
-              { label: 'Browse Book Exchange', tab: 'books', description: 'Find textbooks shared by campus peers.' },
-              { label: 'Find Verified Mentors', tab: 'mentoring', description: 'Schedule 1-on-1 tutoring sessions.' },
-              { label: 'View Credit Ledger', tab: 'wallet', description: 'Check your balance and transaction history.' },
-            ],
-          },
-        ],
+        text: typeof data?.reply === 'string' ? data.reply : 'Request limit reached. Please wait a moment before asking again.',
+        actionCards: navigation,
       };
     }
-
-    if (!res.ok) {
-      throw new Error(`Server returned ${res.status}`);
+    if (!res.ok || !data || !['live', 'offline', 'system_direct'].includes(data.status)
+      || typeof data.reply !== 'string' || !data.reply.trim()) {
+      throw new Error('Invalid assistant response.');
     }
 
-    const data = await res.json();
-
+    const offline = data.status !== 'live';
     return {
-      id: 'msg-' + Date.now(),
-      sender: 'assistant',
-      status: data.status || 'live',
-      text: data.reply,
-      thoughtProcess: data.thoughtProcess,
-      model: data.model,
-      offlineReason: data.offlineReason,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      actionCards: data.actionCards && data.actionCards.length > 0 ? data.actionCards : cards,
+      ...messageMeta(),
+      status: offline ? (cards.length ? 'system_direct' : 'offline') : 'live',
+      text: offline && cards.length
+        ? '**Local Demo Results**\n\nThe live AI service is unavailable. Below are results from your current CampusLoop demo data.'
+        : data.reply,
+      model: typeof data.model === 'string' ? data.model : undefined,
+      offlineReason: offline && typeof data.offlineReason === 'string' ? data.offlineReason : undefined,
+      // Never turn provider-generated or echoed request data into executable cards.
+      actionCards: cards.length ? cards : (offline ? navigation : []),
     };
-  } catch (err: any) {
-    console.warn('Loop AI server request failed, handling offline mode:', err);
-    // Offline mode: do NOT present fake canned AI responses as live AI!
-    // Instead, clearly state offline status and present accurate system database results and navigation shortcuts.
+  } catch {
     return {
-      id: 'msg-' + Date.now(),
-      sender: 'assistant',
+      ...messageMeta(),
       status: cards.length > 0 ? 'system_direct' : 'offline',
-      text:
-        cards.length > 0
-          ? `**System Database Result**\n\nThe live Gemini AI service is currently unreachable. Below are the verified CampusLoop database results matching your query:`
-          : `**AI Assistant Offline**\n\nThe live Gemini AI service is currently unavailable. You can continue using CampusLoop with the navigation shortcuts below:`,
-      offlineReason: 'Backend Gemini connection unavailable.',
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      actionCards:
-        cards.length > 0
-          ? cards
-          : [
-              {
-                type: 'navigation',
-                navigationData: [
-                  { label: 'Browse Books', tab: 'books' },
-                  { label: 'Peer Mentoring', tab: 'mentoring' },
-                  { label: 'My Wallet', tab: 'wallet' },
-                  { label: 'Canteen Rewards', tab: 'rewards' },
-                ],
-              },
-            ],
+      text: cards.length > 0
+        ? '**Local Demo Results**\n\nThe live AI service is unreachable. Below are results from your current CampusLoop demo data.'
+        : '**AI Assistant Offline**\n\nThe live AI service is unavailable. You can continue using CampusLoop with the navigation shortcuts below.',
+      offlineReason: 'Backend AI connection unavailable.',
+      actionCards: cards.length ? cards : navigation,
     };
+  } finally {
+    clearTimeout(timeout);
   }
 }

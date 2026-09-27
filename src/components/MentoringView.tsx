@@ -53,7 +53,7 @@ export const MentoringView: React.FC = () => {
   const isRohanAtMilestone = (rohan?.credits || 0) >= 10010;
 
   // Filter sessions relevant to the current user or platform
-  const isMentor = currentUser.isVerifiedMentor || currentUser.roles.includes('mentor');
+  const isMentor = currentUser.isVerifiedMentor === true;
   const isAdmin = currentUser.roles.includes('admin');
 
   const incomingRequestsForMe = sessions.filter(
@@ -486,7 +486,7 @@ export const MentoringView: React.FC = () => {
 
                     <div className="text-right">
                       <span className="font-mono font-extrabold text-base text-emerald-700 block">
-                        +{b?.total || 70} CR
+                        +{b?.total ?? 0} CR
                       </span>
                       <span className="text-[10px] text-slate-400 font-mono">
                         TX: {session.transactionId?.slice(0, 14)}...
@@ -498,16 +498,16 @@ export const MentoringView: React.FC = () => {
                   <div className="p-3 bg-white rounded-xl border border-slate-200 grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
                     <div>
                       <span className="text-slate-400 block">Base Attendance</span>
-                      <span className="font-bold text-slate-800">+{b?.baseCompletion || 40} CR</span>
+                      <span className="font-bold text-slate-800">+{b?.baseCompletion ?? 0} CR</span>
                     </div>
                     <div>
                       <span className="text-slate-400 block">Rating ({session.rating}★)</span>
-                      <span className="font-bold text-slate-800">+{b?.feedbackBonus || 10} CR</span>
+                      <span className="font-bold text-slate-800">+{b?.feedbackBonus ?? 0} CR</span>
                     </div>
                     <div>
                       <span className="text-slate-400 block">Observed Quiz Gain</span>
                       <span className="font-bold text-indigo-700">
-                        +{b?.observedImprovement || 67} pp (+{b?.quizImprovementBonus || 20} CR)
+                        +{b?.observedImprovement ?? 0} pp (+{b?.quizImprovementBonus ?? 0} CR)
                       </span>
                     </div>
                     <div>
@@ -535,7 +535,7 @@ export const MentoringView: React.FC = () => {
         <h3 className="font-bold text-slate-900 text-sm">Verified Star Mentors Directory</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {Object.values(users)
-            .filter((u) => u.isVerifiedMentor || u.roles.includes('mentor'))
+            .filter((u) => u.isVerifiedMentor === true)
             .map((mentor) => (
               <div
                 key={mentor.id}
@@ -582,11 +582,12 @@ export const MentoringView: React.FC = () => {
         onSuccess={(msg) => showToast(msg, 'success')}
       />
 
-      <LearnerConfirmationModal
+      {selectedSessionForConfirmation && <LearnerConfirmationModal
+        key={selectedSessionForConfirmation.id}
         session={selectedSessionForConfirmation}
         onClose={() => setSelectedSessionForConfirmation(null)}
         onSuccess={(msg) => showToast(msg, 'success')}
-      />
+      />}
     </div>
   );
 };

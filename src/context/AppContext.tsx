@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import {
   User,
   BookListing,
@@ -16,9 +16,25 @@ import {
 } from '../types';
 import { SEED_USERS, SEED_BOOKS, SEED_TRANSACTIONS } from '../data/seedData';
 import { getQuizForTopic } from '../data/quizBank';
-import { getUserTier, REWARD_CATALOGUE } from '../data/rewardData';
+import { getUserTier, REWARD_CATALOGUE, TIER_DEFINITIONS } from '../data/rewardData';
+import { createId as newId } from '../utils/ids';
 
 const STORAGE_KEY = 'CAMPUSLOOP_STATE_V3';
+
+// Actions return synchronously, so subsequent actions in the same React batch
+// must see a committed value before React renders. Never run action side effects
+// inside a React state updater (StrictMode may invoke those more than once).
+function useLiveState<T>(initialValue: T | (() => T)) {
+  const [value, setValue] = useState(initialValue);
+  const current = useRef(value);
+  const update = useCallback((next: React.SetStateAction<T>) => {
+    current.current = typeof next === 'function'
+      ? (next as (previous: T) => T)(current.current)
+      : next;
+    setValue(current.current);
+  }, []);
+  return [value, update, current] as const;
+}
 
 interface ImpactMetrics {
   booksReused: number;
@@ -111,7 +127,7 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Initialize state from localStorage or seeds
-  const [users, setUsers] = useState<Record<string, User>>(() => {
+  const [users, setUsers, usersRef] = useLiveState<Record<string, User>>(() => {
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_USERS`);
       if (saved) return JSON.parse(saved);
@@ -119,7 +135,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return SEED_USERS;
   });
 
-  const [currentUserId, setCurrentUserId] = useState<string>(() => {
+  const [currentUserId, setCurrentUserId, currentUserIdRef] = useLiveState<string>(() => {
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_CURRENT_USER_ID`);
       if (saved && SEED_USERS[saved]) return saved;
@@ -127,7 +143,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return 'aarav';
   });
 
-  const [books, setBooks] = useState<BookListing[]>(() => {
+  const [books, setBooks, booksRef] = useLiveState<BookListing[]>(() => {
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_BOOKS`);
       if (saved) return JSON.parse(saved);
@@ -135,7 +151,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return SEED_BOOKS;
   });
 
-  const [sessions, setSessions] = useState<MentoringSession[]>(() => {
+  const [sessions, setSessions, sessionsRef] = useLiveState<MentoringSession[]>(() => {
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_SESSIONS`);
       if (saved) return JSON.parse(saved);
@@ -143,7 +159,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return [];
   });
 
-  const [transactions, setTransactions] = useState<CreditTransaction[]>(() => {
+  const [transactions, setTransactions, transactionsRef] = useLiveState<CreditTransaction[]>(() => {
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_TXS`);
       if (saved) return JSON.parse(saved);
@@ -151,7 +167,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return SEED_TRANSACTIONS;
   });
 
-  const [redemptions, setRedemptions] = useState<CanteenRedemption[]>(() => {
+  const [redemptions, setRedemptions, redemptionsRef] = useLiveState<CanteenRedemption[]>(() => {
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_REDEMPTIONS`);
       if (saved) return JSON.parse(saved);
@@ -159,7 +175,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return [];
   });
 
-  const [majorRewardRequests, setMajorRewardRequests] = useState<MajorRewardRequest[]>(() => {
+  const [majorRewardRequests, setMajorRewardRequests, majorRewardRequestsRef] = useLiveState<MajorRewardRequest[]>(() => {
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_MAJOR_REWARDS`);
       if (saved) return JSON.parse(saved);
@@ -169,7 +185,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [showMilestoneModal, setShowMilestoneModal] = useState<boolean>(false);
 
-  const [notifications, setNotifications] = useState<AppNotification[]>(() => {
+  const [notifications, setNotifications] = useLiveState<AppNotification[]>(() => {
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_NOTIFS`);
       if (saved) return JSON.parse(saved);
@@ -204,10 +220,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [users, currentUserId, books, sessions, transactions, redemptions, majorRewardRequests, notifications]);
 
   const currentUser = users[currentUserId] || SEED_USERS.aarav;
+  const getCurrentUser = () => usersRef.current[currentUserIdRef.current] || SEED_USERS.aarav;
 
   // Account switching
   const switchUser = (userId: string) => {
-    if (users[userId]) {
+    if (usersRef.current[userId]) {
       setCurrentUserId(userId);
     }
   };
@@ -237,6 +254,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // --- BOOK EXCHANGE ENGINE ---
   const reserveBook = (bookId: string) => {
+    const books = booksRef.current;
+    const currentUser = getCurrentUser();
     const book = books.find((b) => b.id === bookId);
     if (!book) return { success: false, message: 'Book listing not found.' };
     if (book.status !== 'available') return { success: false, message: 'Book unavailable (double-booking prevented).' };
@@ -268,7 +287,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
 
     const newNotif: AppNotification = {
-      id: 'notif-' + Date.now(),
+      id: newId('notif'),
       userId: book.ownerId,
       title: 'New Book Reservation',
       message: `${currentUser.name} reserved your book "${book.title}". Please arrange the campus handover.`,
@@ -285,6 +304,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const cancelReservation = (bookId: string) => {
+    const books = booksRef.current;
+    const currentUser = getCurrentUser();
     const book = books.find((b) => b.id === bookId);
     if (!book) return { success: false, message: 'Book listing not found.' };
     if (book.status !== 'reserved') return { success: false, message: 'Only reserved books can be cancelled.' };
@@ -315,6 +336,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const confirmHandover = (bookId: string) => {
+    const books = booksRef.current;
+    const users = usersRef.current;
+    const currentUser = getCurrentUser();
     const book = books.find((b) => b.id === bookId);
     if (!book) return { success: false, message: 'Book not found.' };
     if (book.status !== 'reserved') return { success: false, message: 'Book must be reserved to confirm handover.' };
@@ -364,7 +388,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }));
 
       const newTx: CreditTransaction = {
-        id: 'tx-' + Date.now(),
+        id: newId('tx'),
         userId: owner.id,
         userName: owner.name,
         amount: creditAward,
@@ -377,7 +401,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setTransactions((prev) => [newTx, ...prev]);
 
       const ownerNotif: AppNotification = {
-        id: 'notif-' + Date.now(),
+        id: newId('notif'),
         userId: owner.id,
         title: 'Donation Handover Verified (+50 Credits)',
         message: `You earned +50 Campus Credits for donating "${book.title}"! Balance: ${newOwnerCredits} cr.`,
@@ -390,7 +414,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (reserver) {
       const reserverNotif: AppNotification = {
-        id: 'notif-reserver-' + Date.now(),
+        id: newId('notif-reserver'),
         userId: reserver.id,
         title: 'Handover Completed',
         message: `You received "${book.title}" from ${book.ownerName}. Happy studying!`,
@@ -411,6 +435,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const confirmReturn = (bookId: string) => {
+    const books = booksRef.current;
+    const users = usersRef.current;
+    const currentUser = getCurrentUser();
     const book = books.find((b) => b.id === bookId);
     if (!book) return { success: false, message: 'Book not found.' };
     if (book.status !== 'lent_out' || book.listingType !== 'rent') {
@@ -452,7 +479,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }));
 
       const newTx: CreditTransaction = {
-        id: 'tx-return-' + Date.now(),
+        id: newId('tx-return'),
         userId: owner.id,
         userName: owner.name,
         amount: awardAmount,
@@ -482,6 +509,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     rentalDuration?: string;
     mockPrice?: number;
   }) => {
+    const currentUser = getCurrentUser();
     const canList =
       currentUser.roles.includes('senior') ||
       currentUser.roles.includes('mentor') ||
@@ -495,7 +523,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const newBook: BookListing = {
-      id: 'book-' + Date.now(),
+      id: newId('book'),
       title: data.title.trim(),
       author: data.author.trim(),
       grade: data.grade,
@@ -523,6 +551,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteBookListing = (bookId: string) => {
+    const books = booksRef.current;
+    const currentUser = getCurrentUser();
     const book = books.find((b) => b.id === bookId);
     if (!book) return { success: false, message: 'Book not found.' };
     const isOwner = book.ownerId === currentUser.id;
@@ -545,6 +575,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     description: string;
     baselineAnswers: number[];
   }) => {
+    const users = usersRef.current;
+    const sessions = sessionsRef.current;
+    const currentUser = getCurrentUser();
     if (data.mentorId === currentUser.id) {
       return { success: false, message: 'Self-mentoring is not permitted.' };
     }
@@ -575,7 +608,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     const baselinePercentage = Math.round((baselineScore / questions.length) * 100);
-    const newSessionId = 'session-' + Date.now();
+    const newSessionId = newId('session');
     const newSession: MentoringSession = {
       id: newSessionId,
       studentId: currentUser.id,
@@ -604,7 +637,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setSessions((prev) => [newSession, ...prev]);
 
     const mentorNotif: AppNotification = {
-      id: 'notif-' + Date.now(),
+      id: newId('notif'),
       userId: targetMentor.id,
       title: 'New Peer Mentoring Request',
       message: `${currentUser.name} requested "${data.topic}" for ${data.date} at ${data.time}. Diagnostic baseline: ${baselineScore}/${questions.length}.`,
@@ -622,6 +655,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const acceptMentoringSession = (sessionId: string) => {
+    const sessions = sessionsRef.current;
+    const currentUser = getCurrentUser();
     const session = sessions.find((s) => s.id === sessionId);
     if (!session || session.status !== 'requested') return { success: false, message: 'Invalid session.' };
 
@@ -639,8 +674,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const declineMentoringSession = (sessionId: string, reason?: string) => {
+    const sessions = sessionsRef.current;
+    const currentUser = getCurrentUser();
     const session = sessions.find((s) => s.id === sessionId);
     if (!session) return { success: false, message: 'Session not found.' };
+    if (session.mentorId !== currentUser.id && !currentUser.roles.includes('admin')) {
+      return { success: false, message: 'Only the assigned mentor or admin can decline a request.' };
+    }
+    if (session.status !== 'requested') {
+      return { success: false, message: 'Only pending requests can be declined.' };
+    }
     setSessions((prev) =>
       prev.map((s) => (s.id === sessionId ? { ...s, status: 'declined', declineReason: reason } : s))
     );
@@ -648,12 +691,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const finishMentoringSession = (sessionId: string, isSimulated: boolean = true) => {
+    const sessions = sessionsRef.current;
+    const currentUser = getCurrentUser();
     const session = sessions.find((s) => s.id === sessionId);
     if (!session || session.status !== 'accepted') return { success: false, message: 'Invalid session state.' };
 
     const isMentor = session.mentorId === currentUser.id;
     const isAdmin = currentUser.roles.includes('admin');
     if (!isMentor && !isAdmin) return { success: false, message: 'Permission denied.' };
+    if (!isAdmin && !currentUser.isVerifiedMentor) {
+      return { success: false, message: 'Only verified mentors can finish sessions.' };
+    }
 
     const now = new Date().toISOString();
     setSessions((prev) =>
@@ -683,6 +731,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       feedbackComment?: string;
     }
   ) => {
+    const users = usersRef.current;
+    const sessions = sessionsRef.current;
+    const currentUser = getCurrentUser();
     const session = sessions.find((s) => s.id === sessionId);
     if (!session || session.status !== 'awaiting_learner_confirmation') {
       return { success: false, message: 'Session is not awaiting learner confirmation.' };
@@ -720,7 +771,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     const now = new Date().toISOString();
-    const txId = 'tx-mentor-' + Date.now();
+    const txId = newId('tx-mentor');
 
     setSessions((prev) =>
       prev.map((s) =>
@@ -792,6 +843,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     userId: string,
     category: 'snack' | 'legend_combo'
   ) => {
+    const users = usersRef.current;
+    const redemptions = redemptionsRef.current;
     const user = users[userId];
     if (!user) return { available: false, reason: 'User not found', periodKey: '' };
 
@@ -897,8 +950,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Redeem Canteen Item (Freebie or Credit Purchase)
   const redeemCanteenItem = (rewardItem: RewardItem, isFreebieClaim: boolean) => {
-    const user = currentUser;
+    const user = getCurrentUser();
     const tierInfo = getUserTier(user.credits);
+    const catalogueItem = REWARD_CATALOGUE.find((item) => item.id === rewardItem.id);
+    if (!catalogueItem || catalogueItem.isMajorVault || catalogueItem.category === 'tech_vault') {
+      return { success: false, message: 'Choose a canteen or marketplace reward from the catalogue.' };
+    }
+    // Prices, tiers, and categories come from the catalogue, never a stale UI card.
+    rewardItem = catalogueItem;
+    if (user.credits < TIER_DEFINITIONS[rewardItem.minTier].threshold) {
+      return { success: false, message: `This reward requires ${rewardItem.minTier} tier.` };
+    }
+    if (rewardItem.id === 'meal-legend-combo') isFreebieClaim = true;
+    if (isFreebieClaim && rewardItem.category !== 'snacks' && rewardItem.id !== 'meal-legend-combo') {
+      return { success: false, message: 'Only snacks and the Legend welcome combo qualify as tier freebies.' };
+    }
 
     let periodKey = 'standard-purchase';
     let cost = rewardItem.creditCost;
@@ -924,8 +990,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const now = new Date().toISOString();
-    const code = `CL-${rewardItem.category.toUpperCase().slice(0, 4)}-${Math.floor(1000 + Math.random() * 9000)}`;
-    const redemptionId = 'redemption-' + Date.now();
+    const redemptionId = newId('redemption');
+    const code = `CL-${rewardItem.category.toUpperCase().slice(0, 4)}-${redemptionId.slice('redemption-'.length).toUpperCase()}`;
 
     const newRedemption: CanteenRedemption = {
       id: redemptionId,
@@ -957,7 +1023,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }));
 
       const newTx: CreditTransaction = {
-        id: 'tx-redeem-' + Date.now(),
+        id: newId('tx-redeem'),
         userId: user.id,
         userName: user.name,
         amount: -cost,
@@ -979,8 +1045,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Demo Scan action (Simulate Canteen Counter Scanner)
   const scanCanteenCode = (redemptionId: string) => {
+    const redemptions = redemptionsRef.current;
     const item = redemptions.find((r) => r.id === redemptionId);
     if (!item) return { success: false, message: 'Redemption record not found.' };
+    const user = getCurrentUser();
+    if (item.userId !== user.id && !user.roles.includes('admin')) {
+      return { success: false, message: 'Only the voucher owner or admin can simulate collection.' };
+    }
     if (item.status === 'scanned_and_collected') {
       return { success: false, message: 'This QR code was already scanned & collected.' };
     }
@@ -1006,7 +1077,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Request Major Tech Vault Reward (Legend Tier 10,000 CR)
   const requestMajorReward = (rewardItem: RewardItem) => {
-    const user = currentUser;
+    const majorRewardRequests = majorRewardRequestsRef.current;
+    const user = getCurrentUser();
+    const catalogueItem = REWARD_CATALOGUE.find((item) => item.id === rewardItem.id && item.isMajorVault);
+    if (!catalogueItem) return { success: false, message: 'Choose a Tech Vault reward from the catalogue.' };
+    rewardItem = catalogueItem;
     if (user.credits < 10000) {
       return {
         success: false,
@@ -1026,7 +1101,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const newReq: MajorRewardRequest = {
-      id: 'req-' + Date.now(),
+      id: newId('req'),
       userId: user.id,
       userName: user.name,
       userEmail: user.email,
@@ -1047,8 +1122,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Admin Controls
   const approveMajorReward = (requestId: string, approve: boolean, adminNote?: string) => {
+    if (!getCurrentUser().roles.includes('admin')) {
+      return { success: false, message: 'Only admins can review reward requests.' };
+    }
+    const majorRewardRequests = majorRewardRequestsRef.current;
     const req = majorRewardRequests.find((m) => m.id === requestId);
     if (!req) return { success: false, message: 'Request not found.' };
+    if (req.status !== 'pending_review') {
+      return { success: false, message: 'This reward request has already been reviewed.' };
+    }
 
     const now = new Date().toISOString();
     setMajorRewardRequests((prev) =>
@@ -1071,6 +1153,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const toggleMentorVerification = (userId: string) => {
+    if (!getCurrentUser().roles.includes('admin')) {
+      return { success: false, message: 'Only admins can change mentor verification.' };
+    }
+    const users = usersRef.current;
     const target = users[userId];
     if (!target) return { success: false, message: 'User not found.' };
 
@@ -1096,6 +1182,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Calculate Impact Metrics strictly from seeded and demo activity records
   const getImpactMetrics = (): ImpactMetrics => {
+    const books = booksRef.current;
+    const sessions = sessionsRef.current;
+    const transactions = transactionsRef.current;
+    const users = usersRef.current;
     const reusedBooksCount = books.filter(
       (b) => b.status === 'donated' || b.status === 'lent_out' || b.status === 'sold'
     ).length;
@@ -1123,6 +1213,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const clearNotifications = () => {
+    const currentUser = getCurrentUser();
     setNotifications((prev) => prev.filter((n) => n.userId !== currentUser.id));
   };
 

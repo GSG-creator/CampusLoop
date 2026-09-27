@@ -18,7 +18,7 @@ function runStep2Tests() {
       passed++;
     } else {
       console.error(`❌ FAIL: ${msg}`);
-      passed++;
+      failed++;
     }
   }
 
