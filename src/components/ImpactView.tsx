@@ -110,7 +110,7 @@ export const ImpactView: React.FC = () => {
             </p>
           </div>
           <div className="pt-3 border-t border-slate-100 mt-4 text-[10px] text-violet-700 font-semibold">
-            ✓ Based on 45-min completed sessions
+            ✓ Based on recorded session lengths (45 minutes for older sessions)
           </div>
         </div>
       </div>

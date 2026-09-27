@@ -36,7 +36,8 @@ export const BookExchange: React.FC<BookExchangeProps> = ({ onOpenListingModal }
   const [selectedGrade, setSelectedGrade] = useState<string>('all');
   const [selectedSubject, setSelectedSubject] = useState<string>('all');
   const [onlyAvailable, setOnlyAvailable] = useState(false);
-  const [selectedBookForDetails, setSelectedBookForDetails] = useState<BookListing | null>(null);
+  const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
+  const selectedBookForDetails = books.find((book) => book.id === selectedBookId);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(
     null
   );
@@ -80,7 +81,7 @@ export const BookExchange: React.FC<BookExchangeProps> = ({ onOpenListingModal }
     return books.filter((book) => {
       // Search
       if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
+        const q = searchQuery.trim().toLowerCase();
         const matchesTitle = book.title.toLowerCase().includes(q);
         const matchesAuthor = book.author.toLowerCase().includes(q);
         const matchesSubject = book.subject.toLowerCase().includes(q);
@@ -96,8 +97,13 @@ export const BookExchange: React.FC<BookExchangeProps> = ({ onOpenListingModal }
       }
 
       // Grade filter
-      if (selectedGrade !== 'all' && !book.grade.includes(selectedGrade)) {
-        return false;
+      if (selectedGrade !== 'all') {
+        const target = Number(selectedGrade.match(/\d+/)?.[0]);
+        const range = book.grade.match(/(\d+)\s*[-–]\s*(\d+)/);
+        const matches = range
+          ? target >= Number(range[1]) && target <= Number(range[2])
+          : book.grade.match(/\d+/g)?.some((grade) => Number(grade) === target);
+        if (!matches) return false;
       }
 
       // Subject filter
@@ -412,7 +418,7 @@ export const BookExchange: React.FC<BookExchangeProps> = ({ onOpenListingModal }
               onConfirmHandover={handleConfirmHandover}
               onConfirmReturn={handleConfirmReturn}
               onCancelReservation={handleCancelReservation}
-              onOpenDetails={(b) => setSelectedBookForDetails(b)}
+              onOpenDetails={(b) => setSelectedBookId(b.id)}
             />
           ))}
         </div>
@@ -423,7 +429,7 @@ export const BookExchange: React.FC<BookExchangeProps> = ({ onOpenListingModal }
         <BookDetailsModal
           book={selectedBookForDetails}
           currentUser={currentUser}
-          onClose={() => setSelectedBookForDetails(null)}
+          onClose={() => setSelectedBookId(null)}
           onReserve={handleReserve}
           onConfirmHandover={handleConfirmHandover}
           onConfirmReturn={handleConfirmReturn}

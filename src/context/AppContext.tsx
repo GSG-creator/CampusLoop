@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import {
   User,
   BookListing,
@@ -13,12 +13,96 @@ import {
   RewardItem,
   CanteenRedemption,
   MajorRewardRequest,
+  LearningSupport,
+  LearningPlan,
+  LearningPlanDraft,
+  QuizQuestion,
 } from '../types';
 import { SEED_USERS, SEED_BOOKS, SEED_TRANSACTIONS } from '../data/seedData';
 import { getQuizForTopic } from '../data/quizBank';
-import { getUserTier, REWARD_CATALOGUE } from '../data/rewardData';
+import { getUserTier, REWARD_CATALOGUE, TIER_DEFINITIONS } from '../data/rewardData';
+import { createId as newId } from '../utils/ids';
 
 const STORAGE_KEY = 'CAMPUSLOOP_STATE_V3';
+
+const SUPPORT_NEEDS = ['memory', 'processing', 'reading', 'communication', 'energy', 'motor'];
+const RESPONSE_MODES = ['spoken', 'typed', 'pointing', 'demonstration'];
+const GOAL_REVIEWS = ['practised', 'maintained', 'needs_more_support'];
+const validText = (value: unknown, max: number, required = false): value is string =>
+  typeof value === 'string' && value.length <= max && (!required || Boolean(value.trim()));
+const validDate = (value: unknown): value is string => {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+};
+const validMeetingLink = (value: string): boolean => {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && Boolean(url.hostname) && !url.username && !url.password;
+  } catch {
+    return false;
+  }
+};
+const validQuizAnswers = (answers: unknown, questions: QuizQuestion[]): answers is number[] =>
+  Array.isArray(answers) && answers.length === questions.length && questions.every((question, index) =>
+    Number.isInteger(answers[index]) && answers[index] >= 0 && answers[index] < question.options.length);
+
+function validateLearningSupport(support: LearningSupport | undefined): string | undefined {
+  if (!support || typeof support !== 'object') return 'Choose your learning support preferences.';
+  if (!Array.isArray(support.needs) || support.needs.length > 6
+    || Array.from(support.needs).some((need) => !SUPPORT_NEEDS.includes(need))
+    || new Set(support.needs).size !== support.needs.length) {
+    return 'Choose valid, distinct support preferences.';
+  }
+  if (!validText(support.goal, 500, true)) return 'Add a learning goal of up to 500 characters.';
+  if (!validText(support.strengths, 500)) return 'Keep strengths to 500 characters or fewer.';
+  if (!RESPONSE_MODES.includes(support.responseMode)) return 'Choose a supported response format.';
+  if (!Number.isInteger(support.sessionMinutes) || support.sessionMinutes < 10 || support.sessionMinutes > 90) {
+    return 'Choose a session length between 10 and 90 minutes.';
+  }
+  if (!Number.isInteger(support.breakEveryMinutes) || support.breakEveryMinutes < 0
+    || support.breakEveryMinutes > support.sessionMinutes) {
+    return 'Break intervals must be between zero and the session length.';
+  }
+}
+
+function validateLearningPlan(plan: LearningPlanDraft): string | undefined {
+  if (!plan || typeof plan !== 'object') return 'Add a learning plan.';
+  if (!validText(plan.goal, 500, true) || !validText(plan.startingPoint, 500, true)) {
+    return 'Add a goal and starting point, each up to 500 characters.';
+  }
+  if (!validText(plan.strengths, 500)) return 'Keep strengths to 500 characters or fewer.';
+  if (!Array.isArray(plan.strategies) || plan.strategies.length < 1 || plan.strategies.length > 12
+    || Array.from(plan.strategies).some((strategy) => !validText(strategy, 500, true))) {
+    return 'Add between 1 and 12 teaching strategies, each up to 500 characters.';
+  }
+  if (!Array.isArray(plan.lessons) || plan.lessons.length < 1 || plan.lessons.length > 12
+    || Array.from(plan.lessons).some((lesson) => !lesson || !validText(lesson.title, 120, true)
+      || !validText(lesson.objective, 500, true) || !validText(lesson.activities, 1000, true)
+      || !validText(lesson.evidence, 1000, true))) {
+    return 'Add between 1 and 12 lessons with a title, objective, activity and way to review participation.';
+  }
+  if (!validText(plan.materials, 2000) || !validText(plan.teacherGuidance, 2000)) {
+    return 'Keep materials and teacher guidance to 2,000 characters each.';
+  }
+  if (!RESPONSE_MODES.includes(plan.responseMode)) return 'Choose a supported response format.';
+  if (!validDate(plan.reviewDate)) return 'Choose a valid review date.';
+}
+
+// Actions return synchronously, so subsequent actions in the same React batch
+// must see a committed value before React renders. Never run action side effects
+// inside a React state updater (StrictMode may invoke those more than once).
+function useLiveState<T>(initialValue: T | (() => T)) {
+  const [value, setValue] = useState(initialValue);
+  const current = useRef(value);
+  const update = useCallback((next: React.SetStateAction<T>) => {
+    current.current = typeof next === 'function'
+      ? (next as (previous: T) => T)(current.current)
+      : next;
+    setValue(current.current);
+  }, []);
+  return [value, update, current] as const;
+}
 
 interface ImpactMetrics {
   booksReused: number;
@@ -37,6 +121,7 @@ interface AppContextType {
   notifications: AppNotification[];
   redemptions: CanteenRedemption[];
   majorRewardRequests: MajorRewardRequest[];
+  resetGeneration: number;
   showMilestoneModal: boolean;
   setShowMilestoneModal: (show: boolean) => void;
   switchUser: (userId: string) => void;
@@ -68,16 +153,26 @@ interface AppContextType {
     time: string;
     description: string;
     baselineAnswers: number[];
+    learningSupport?: LearningSupport;
+    assessmentMode?: 'quiz' | 'supported';
+    classMode?: 'online' | 'offline';
+    meetingLink?: string;
+    location?: string;
   }) => { success: boolean; message: string; sessionId?: string };
   acceptMentoringSession: (sessionId: string) => { success: boolean; message: string };
   declineMentoringSession: (sessionId: string, reason?: string) => { success: boolean; message: string };
   finishMentoringSession: (sessionId: string, isSimulated?: boolean) => { success: boolean; message: string };
+  saveLearningPlan: (sessionId: string, draft: LearningPlanDraft, share: boolean) => { success: boolean; message: string };
+  reviewLearningPlan: (sessionId: string, note: string) => { success: boolean; message: string };
+  respondToLearningPlan: (sessionId: string, response: 'agreed' | 'changes_requested', note?: string) => { success: boolean; message: string };
   confirmAndFinalizeSession: (
     sessionId: string,
     data: {
       finalAnswers: number[];
       rating: number;
       feedbackComment?: string;
+      participationConfirmed?: boolean;
+      goalReview?: 'practised' | 'maintained' | 'needs_more_support';
     }
   ) => { success: boolean; message: string; breakdown?: CreditBreakdown };
   // Rewards & Canteen Redemption
@@ -111,7 +206,7 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Initialize state from localStorage or seeds
-  const [users, setUsers] = useState<Record<string, User>>(() => {
+  const [users, setUsers, usersRef] = useLiveState<Record<string, User>>(() => {
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_USERS`);
       if (saved) return JSON.parse(saved);
@@ -119,7 +214,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return SEED_USERS;
   });
 
-  const [currentUserId, setCurrentUserId] = useState<string>(() => {
+  const [currentUserId, setCurrentUserId, currentUserIdRef] = useLiveState<string>(() => {
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_CURRENT_USER_ID`);
       if (saved && SEED_USERS[saved]) return saved;
@@ -127,7 +222,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return 'aarav';
   });
 
-  const [books, setBooks] = useState<BookListing[]>(() => {
+  const [books, setBooks, booksRef] = useLiveState<BookListing[]>(() => {
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_BOOKS`);
       if (saved) return JSON.parse(saved);
@@ -135,7 +230,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return SEED_BOOKS;
   });
 
-  const [sessions, setSessions] = useState<MentoringSession[]>(() => {
+  const [sessions, setSessions, sessionsRef] = useLiveState<MentoringSession[]>(() => {
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_SESSIONS`);
       if (saved) return JSON.parse(saved);
@@ -143,7 +238,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return [];
   });
 
-  const [transactions, setTransactions] = useState<CreditTransaction[]>(() => {
+  const [transactions, setTransactions, transactionsRef] = useLiveState<CreditTransaction[]>(() => {
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_TXS`);
       if (saved) return JSON.parse(saved);
@@ -151,7 +246,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return SEED_TRANSACTIONS;
   });
 
-  const [redemptions, setRedemptions] = useState<CanteenRedemption[]>(() => {
+  const [redemptions, setRedemptions, redemptionsRef] = useLiveState<CanteenRedemption[]>(() => {
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_REDEMPTIONS`);
       if (saved) return JSON.parse(saved);
@@ -159,7 +254,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return [];
   });
 
-  const [majorRewardRequests, setMajorRewardRequests] = useState<MajorRewardRequest[]>(() => {
+  const [majorRewardRequests, setMajorRewardRequests, majorRewardRequestsRef] = useLiveState<MajorRewardRequest[]>(() => {
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_MAJOR_REWARDS`);
       if (saved) return JSON.parse(saved);
@@ -168,8 +263,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const [showMilestoneModal, setShowMilestoneModal] = useState<boolean>(false);
+  const [resetGeneration, setResetGeneration] = useState(0);
 
-  const [notifications, setNotifications] = useState<AppNotification[]>(() => {
+  const [notifications, setNotifications] = useLiveState<AppNotification[]>(() => {
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_NOTIFS`);
       if (saved) return JSON.parse(saved);
@@ -204,16 +300,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [users, currentUserId, books, sessions, transactions, redemptions, majorRewardRequests, notifications]);
 
   const currentUser = users[currentUserId] || SEED_USERS.aarav;
+  const getCurrentUser = () => usersRef.current[currentUserIdRef.current] || SEED_USERS.aarav;
 
   // Account switching
   const switchUser = (userId: string) => {
-    if (users[userId]) {
+    if (usersRef.current[userId]) {
       setCurrentUserId(userId);
     }
   };
 
   // Repeatable Reset Demo Action
   const resetAllData = () => {
+    // Reset transient UI even when the active persona is already Aarav.
+    setResetGeneration((generation) => generation + 1);
     setUsers(SEED_USERS);
     setCurrentUserId('aarav');
     setBooks(SEED_BOOKS);
@@ -237,6 +336,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // --- BOOK EXCHANGE ENGINE ---
   const reserveBook = (bookId: string) => {
+    const books = booksRef.current;
+    const currentUser = getCurrentUser();
     const book = books.find((b) => b.id === bookId);
     if (!book) return { success: false, message: 'Book listing not found.' };
     if (book.status !== 'available') return { success: false, message: 'Book unavailable (double-booking prevented).' };
@@ -268,7 +369,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
 
     const newNotif: AppNotification = {
-      id: 'notif-' + Date.now(),
+      id: newId('notif'),
       userId: book.ownerId,
       title: 'New Book Reservation',
       message: `${currentUser.name} reserved your book "${book.title}". Please arrange the campus handover.`,
@@ -285,6 +386,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const cancelReservation = (bookId: string) => {
+    const books = booksRef.current;
+    const currentUser = getCurrentUser();
     const book = books.find((b) => b.id === bookId);
     if (!book) return { success: false, message: 'Book listing not found.' };
     if (book.status !== 'reserved') return { success: false, message: 'Only reserved books can be cancelled.' };
@@ -315,6 +418,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const confirmHandover = (bookId: string) => {
+    const books = booksRef.current;
+    const users = usersRef.current;
+    const currentUser = getCurrentUser();
     const book = books.find((b) => b.id === bookId);
     if (!book) return { success: false, message: 'Book not found.' };
     if (book.status !== 'reserved') return { success: false, message: 'Book must be reserved to confirm handover.' };
@@ -364,7 +470,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }));
 
       const newTx: CreditTransaction = {
-        id: 'tx-' + Date.now(),
+        id: newId('tx'),
         userId: owner.id,
         userName: owner.name,
         amount: creditAward,
@@ -377,7 +483,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setTransactions((prev) => [newTx, ...prev]);
 
       const ownerNotif: AppNotification = {
-        id: 'notif-' + Date.now(),
+        id: newId('notif'),
         userId: owner.id,
         title: 'Donation Handover Verified (+50 Credits)',
         message: `You earned +50 Campus Credits for donating "${book.title}"! Balance: ${newOwnerCredits} cr.`,
@@ -390,7 +496,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (reserver) {
       const reserverNotif: AppNotification = {
-        id: 'notif-reserver-' + Date.now(),
+        id: newId('notif-reserver'),
         userId: reserver.id,
         title: 'Handover Completed',
         message: `You received "${book.title}" from ${book.ownerName}. Happy studying!`,
@@ -411,6 +517,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const confirmReturn = (bookId: string) => {
+    const books = booksRef.current;
+    const users = usersRef.current;
+    const currentUser = getCurrentUser();
     const book = books.find((b) => b.id === bookId);
     if (!book) return { success: false, message: 'Book not found.' };
     if (book.status !== 'lent_out' || book.listingType !== 'rent') {
@@ -452,7 +561,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }));
 
       const newTx: CreditTransaction = {
-        id: 'tx-return-' + Date.now(),
+        id: newId('tx-return'),
         userId: owner.id,
         userName: owner.name,
         amount: awardAmount,
@@ -482,6 +591,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     rentalDuration?: string;
     mockPrice?: number;
   }) => {
+    const currentUser = getCurrentUser();
     const canList =
       currentUser.roles.includes('senior') ||
       currentUser.roles.includes('mentor') ||
@@ -495,7 +605,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const newBook: BookListing = {
-      id: 'book-' + Date.now(),
+      id: newId('book'),
       title: data.title.trim(),
       author: data.author.trim(),
       grade: data.grade,
@@ -523,6 +633,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteBookListing = (bookId: string) => {
+    const books = booksRef.current;
+    const currentUser = getCurrentUser();
     const book = books.find((b) => b.id === bookId);
     if (!book) return { success: false, message: 'Book not found.' };
     const isOwner = book.ownerId === currentUser.id;
@@ -544,7 +656,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     time: string;
     description: string;
     baselineAnswers: number[];
+    learningSupport?: LearningSupport;
+    assessmentMode?: 'quiz' | 'supported';
+    classMode?: 'online' | 'offline';
+    meetingLink?: string;
+    location?: string;
   }) => {
+    const users = usersRef.current;
+    const sessions = sessionsRef.current;
+    const currentUser = getCurrentUser();
     if (data.mentorId === currentUser.id) {
       return { success: false, message: 'Self-mentoring is not permitted.' };
     }
@@ -553,6 +673,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!targetMentor || !targetMentor.isVerifiedMentor) {
       return { success: false, message: 'Only verified academic mentors can be requested.' };
     }
+
+    const assessmentMode = data.assessmentMode ?? 'quiz';
+    if (assessmentMode !== 'quiz' && assessmentMode !== 'supported') {
+      return { success: false, message: 'Choose a valid session assessment format.' };
+    }
+    const classMode = data.classMode ?? 'offline';
+    if (classMode !== 'online' && classMode !== 'offline') {
+      return { success: false, message: 'Choose an online or offline class.' };
+    }
+    if (data.meetingLink !== undefined && (!validText(data.meetingLink, 2048)
+      || (data.meetingLink.trim() && !validMeetingLink(data.meetingLink.trim())))) {
+      return { success: false, message: 'Use an HTTPS meeting link without embedded credentials, up to 2,048 characters.' };
+    }
+    if (data.location !== undefined && !validText(data.location, 200)) {
+      return { success: false, message: 'Keep the meeting location to 200 characters or fewer.' };
+    }
+    if (!validText(data.topic, 500, true)) return { success: false, message: 'Add a topic of up to 500 characters.' };
+    if (!Array.isArray(data.baselineAnswers)) return { success: false, message: 'Invalid baseline answers.' };
+    if (assessmentMode === 'supported' || data.learningSupport !== undefined) {
+      const error = validateLearningSupport(data.learningSupport);
+      if (error) return { success: false, message: error };
+    }
+    // Copy only the needs-based preferences; no diagnostic fields are collected.
+    const learningSupport: LearningSupport | undefined = data.learningSupport ? {
+      needs: [...data.learningSupport.needs],
+      strengths: data.learningSupport.strengths.trim(),
+      goal: data.learningSupport.goal.trim(),
+      responseMode: data.learningSupport.responseMode,
+      sessionMinutes: data.learningSupport.sessionMinutes,
+      breakEveryMinutes: data.learningSupport.breakEveryMinutes,
+    } : undefined;
 
     const hasConflict = sessions.some(
       (s) =>
@@ -568,14 +719,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     }
 
-    const questions = getQuizForTopic(data.topic);
-    let baselineScore = 0;
-    data.baselineAnswers.forEach((ans, idx) => {
-      if (questions[idx] && ans === questions[idx].correctOptionIndex) baselineScore++;
-    });
-
-    const baselinePercentage = Math.round((baselineScore / questions.length) * 100);
-    const newSessionId = 'session-' + Date.now();
+    const questions = assessmentMode === 'quiz' ? getQuizForTopic(data.topic) : [];
+    if (assessmentMode === 'quiz' && !validQuizAnswers(data.baselineAnswers, questions)) {
+      return { success: false, message: 'Answer every baseline quiz question before requesting this session.' };
+    }
+    const baselineScore = questions.reduce((score, question, index) =>
+      score + Number(data.baselineAnswers[index] === question.correctOptionIndex), 0);
+    const baselineQuiz: QuizSubmission | undefined = assessmentMode === 'quiz' ? {
+      answers: [...data.baselineAnswers],
+      score: baselineScore,
+      totalQuestions: questions.length,
+      percentage: Math.round((baselineScore / questions.length) * 100),
+      completedAt: new Date().toISOString(),
+    } : undefined;
+    const newSessionId = newId('session');
     const newSession: MentoringSession = {
       id: newSessionId,
       studentId: currentUser.id,
@@ -591,23 +748,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       description: data.description,
       status: 'requested',
       requestedAt: new Date().toISOString(),
-      baselineQuiz: {
-        answers: data.baselineAnswers,
-        score: baselineScore,
-        totalQuestions: questions.length,
-        percentage: baselinePercentage,
-        completedAt: new Date().toISOString(),
-      },
+      ...(baselineQuiz ? { baselineQuiz } : {}),
+      assessmentMode,
+      ...(learningSupport ? { learningSupport } : {}),
+      sessionMinutes: learningSupport?.sessionMinutes ?? 45,
+      classMode,
+      ...(classMode === 'online' && data.meetingLink?.trim() ? { meetingLink: data.meetingLink.trim() } : {}),
+      ...(classMode === 'offline' && data.location?.trim() ? { location: data.location.trim() } : {}),
       creditAwarded: false,
     };
 
     setSessions((prev) => [newSession, ...prev]);
 
     const mentorNotif: AppNotification = {
-      id: 'notif-' + Date.now(),
+      id: newId('notif'),
       userId: targetMentor.id,
       title: 'New Peer Mentoring Request',
-      message: `${currentUser.name} requested "${data.topic}" for ${data.date} at ${data.time}. Diagnostic baseline: ${baselineScore}/${questions.length}.`,
+      message: `${currentUser.name} requested "${data.topic}" for ${data.date} at ${data.time}. ${assessmentMode === 'supported'
+        ? 'Review their learning goal and support preferences before planning the session.'
+        : `Diagnostic baseline: ${baselineScore}/${questions.length}.`}`,
       timestamp: new Date().toISOString(),
       read: false,
       type: 'info',
@@ -616,12 +775,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     return {
       success: true,
-      message: `Mentoring request submitted to ${targetMentor.name}! (Baseline: ${baselineScore}/${questions.length}).`,
+      message: assessmentMode === 'supported'
+        ? `Supported mentoring request submitted to ${targetMentor.name}. Your learning preferences and goal are included.`
+        : `Mentoring request submitted to ${targetMentor.name}! (Baseline: ${baselineScore}/${questions.length}).`,
       sessionId: newSessionId,
     };
   };
 
   const acceptMentoringSession = (sessionId: string) => {
+    const sessions = sessionsRef.current;
+    const currentUser = getCurrentUser();
     const session = sessions.find((s) => s.id === sessionId);
     if (!session || session.status !== 'requested') return { success: false, message: 'Invalid session.' };
 
@@ -639,21 +802,118 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const declineMentoringSession = (sessionId: string, reason?: string) => {
+    const sessions = sessionsRef.current;
+    const currentUser = getCurrentUser();
     const session = sessions.find((s) => s.id === sessionId);
     if (!session) return { success: false, message: 'Session not found.' };
+    if (session.mentorId !== currentUser.id && !currentUser.roles.includes('admin')) {
+      return { success: false, message: 'Only the assigned mentor or admin can decline a request.' };
+    }
+    if (session.status !== 'requested') {
+      return { success: false, message: 'Only pending requests can be declined.' };
+    }
     setSessions((prev) =>
       prev.map((s) => (s.id === sessionId ? { ...s, status: 'declined', declineReason: reason } : s))
     );
     return { success: true, message: 'Session request declined.' };
   };
 
+  const saveLearningPlan = (sessionId: string, draft: LearningPlanDraft, share: boolean) => {
+    const session = sessionsRef.current.find((item) => item.id === sessionId);
+    const user = getCurrentUser();
+    if (!session) return { success: false, message: 'Session not found.' };
+    if (session.mentorId !== user.id || user.isVerifiedMentor !== true || !user.roles.includes('mentor')) {
+      return { success: false, message: 'Only the assigned verified mentor can write this learning plan.' };
+    }
+    if (session.status !== 'requested' && session.status !== 'accepted') {
+      return { success: false, message: 'Learning plans can only be edited before a session is finished or declined.' };
+    }
+    const error = validateLearningPlan(draft);
+    if (error) return { success: false, message: error };
+    if (typeof share !== 'boolean') return { success: false, message: 'Choose whether to save or share the plan.' };
+
+    // Rebuild the plan so every edit invalidates earlier reviews and agreement.
+    const learningPlan: LearningPlan = {
+      goal: draft.goal.trim(),
+      strengths: draft.strengths.trim(),
+      startingPoint: draft.startingPoint.trim(),
+      strategies: draft.strategies.map((strategy) => strategy.trim()),
+      lessons: draft.lessons.map((lesson) => ({
+        title: lesson.title.trim(), objective: lesson.objective.trim(),
+        activities: lesson.activities.trim(), evidence: lesson.evidence.trim(),
+      })),
+      materials: draft.materials.trim(),
+      responseMode: draft.responseMode,
+      reviewDate: draft.reviewDate,
+      teacherGuidance: draft.teacherGuidance.trim(),
+      status: share ? 'shared' : 'draft',
+      authorId: user.id,
+      updatedAt: new Date().toISOString(),
+    };
+    setSessions((previous) => previous.map((item) => item.id === sessionId ? { ...item, learningPlan } : item));
+    return {
+      success: true,
+      message: share ? 'Learning plan shared for learner feedback and teacher review.' : 'Learning plan saved as a draft.',
+    };
+  };
+
+  const reviewLearningPlan = (sessionId: string, note: string) => {
+    const session = sessionsRef.current.find((item) => item.id === sessionId);
+    const user = getCurrentUser();
+    if (!user.roles.includes('admin')) return { success: false, message: 'Only a teacher or admin can review learning plans.' };
+    if (!session || !session.learningPlan) return { success: false, message: 'Learning plan not found.' };
+    if ((session.status !== 'requested' && session.status !== 'accepted') || session.learningPlan.status !== 'shared') {
+      return { success: false, message: 'Only shared plans for requested or accepted sessions can be reviewed.' };
+    }
+    if (!validText(note, 2000)) return { success: false, message: 'Keep review notes to 2,000 characters or fewer.' };
+    const learningPlan: LearningPlan = {
+      ...session.learningPlan, status: 'reviewed', reviewedBy: user.id,
+      reviewedAt: new Date().toISOString(), reviewNote: note.trim(),
+    };
+    setSessions((previous) => previous.map((item) => item.id === sessionId ? { ...item, learningPlan } : item));
+    return { success: true, message: 'Teacher review saved with the learning plan.' };
+  };
+
+  const respondToLearningPlan = (
+    sessionId: string,
+    response: 'agreed' | 'changes_requested',
+    note?: string
+  ) => {
+    const session = sessionsRef.current.find((item) => item.id === sessionId);
+    const user = getCurrentUser();
+    if (!session || !session.learningPlan) return { success: false, message: 'Learning plan not found.' };
+    if (session.studentId !== user.id) return { success: false, message: 'Only the learner can respond to their learning plan.' };
+    if ((session.status !== 'requested' && session.status !== 'accepted')
+      || (session.learningPlan.status !== 'shared' && session.learningPlan.status !== 'reviewed')) {
+      return { success: false, message: 'Respond to a shared plan before the session is finished or declined.' };
+    }
+    if (response !== 'agreed' && response !== 'changes_requested') {
+      return { success: false, message: 'Choose agreement or request changes.' };
+    }
+    if (note !== undefined && !validText(note, 2000)) return { success: false, message: 'Keep learner notes to 2,000 characters or fewer.' };
+    const learningPlan: LearningPlan = {
+      ...session.learningPlan, learnerResponse: response, learnerNote: note?.trim(),
+    };
+    setSessions((previous) => previous.map((item) => item.id === sessionId ? { ...item, learningPlan } : item));
+    return { success: true, message: response === 'agreed' ? 'Your agreement was saved.' : 'Your request for changes was saved.' };
+  };
+
   const finishMentoringSession = (sessionId: string, isSimulated: boolean = true) => {
+    const sessions = sessionsRef.current;
+    const currentUser = getCurrentUser();
     const session = sessions.find((s) => s.id === sessionId);
     if (!session || session.status !== 'accepted') return { success: false, message: 'Invalid session state.' };
 
     const isMentor = session.mentorId === currentUser.id;
     const isAdmin = currentUser.roles.includes('admin');
     if (!isMentor && !isAdmin) return { success: false, message: 'Permission denied.' };
+    if (!isAdmin && !currentUser.isVerifiedMentor) {
+      return { success: false, message: 'Only verified mentors can finish sessions.' };
+    }
+    if (session.learningSupport && ((session.learningPlan?.status !== 'shared' && session.learningPlan?.status !== 'reviewed')
+      || session.learningPlan.learnerResponse !== 'agreed')) {
+      return { success: false, message: 'Share the learning plan and ask the learner to agree before finishing this supported session.' };
+    }
 
     const now = new Date().toISOString();
     setSessions((prev) =>
@@ -671,7 +931,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     return {
       success: true,
-      message: `Session marked finished. Awaiting learner confirmation & final quiz. Credits held until learner verifies.`,
+      message: session.assessmentMode === 'supported'
+        ? 'Session marked finished. Awaiting learner confirmation and goal reflection. Credits held until participation is confirmed.'
+        : 'Session marked finished. Awaiting learner confirmation & final quiz. Credits held until learner verifies.',
     };
   };
 
@@ -681,8 +943,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       finalAnswers: number[];
       rating: number;
       feedbackComment?: string;
+      participationConfirmed?: boolean;
+      goalReview?: 'practised' | 'maintained' | 'needs_more_support';
     }
   ) => {
+    const users = usersRef.current;
+    const sessions = sessionsRef.current;
+    const currentUser = getCurrentUser();
     const session = sessions.find((s) => s.id === sessionId);
     if (!session || session.status !== 'awaiting_learner_confirmation') {
       return { success: false, message: 'Session is not awaiting learner confirmation.' };
@@ -692,26 +959,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const isAdmin = currentUser.roles.includes('admin');
     if (!isStudent && !isAdmin) return { success: false, message: 'Permission denied.' };
     if (session.creditAwarded) return { success: false, message: 'Credits already awarded for this session.' };
+    if (!Number.isInteger(data.rating) || data.rating < 1 || data.rating > 5) {
+      return { success: false, message: 'Choose a feedback rating from 1 to 5.' };
+    }
+    if (data.feedbackComment !== undefined && !validText(data.feedbackComment, 2000)) {
+      return { success: false, message: 'Keep feedback to 2,000 characters or fewer.' };
+    }
+    const mentor = users[session.mentorId];
+    if (!mentor) return { success: false, message: 'The assigned mentor could not be found.' };
 
-    const questions = getQuizForTopic(session.topic);
-    let finalScore = 0;
-    data.finalAnswers.forEach((ans, idx) => {
-      if (questions[idx] && ans === questions[idx].correctOptionIndex) finalScore++;
-    });
-
-    const finalPercentage = Math.round((finalScore / questions.length) * 100);
-    const baselinePercentage = session.baselineQuiz?.percentage ?? 0;
-    const observedImprovement = Math.max(0, finalPercentage - baselinePercentage);
+    const isSupported = session.assessmentMode === 'supported';
+    if (isSupported && (data.participationConfirmed !== true || !data.goalReview || !GOAL_REVIEWS.includes(data.goalReview))) {
+      return { success: false, message: 'Confirm participation and choose how the learning goal went.' };
+    }
+    const questions = isSupported ? [] : getQuizForTopic(session.topic);
+    if (!isSupported && !validQuizAnswers(data.finalAnswers, questions)) {
+      return { success: false, message: 'Answer every final quiz question before confirming this session.' };
+    }
+    const finalScore = questions.reduce((score, question, index) =>
+      score + Number(data.finalAnswers[index] === question.correctOptionIndex), 0);
+    // Numeric zeroes retain compatibility with legacy ledgers; supported sessions
+    // have no quiz records and the UI must present participation, never these scores.
+    const finalPercentage = isSupported ? 0 : Math.round((finalScore / questions.length) * 100);
+    const baselinePercentage = isSupported ? 0 : session.baselineQuiz?.percentage ?? 0;
+    const observedImprovement = isSupported ? 0 : Math.max(0, finalPercentage - baselinePercentage);
 
     const baseCompletion = 40;
     const feedbackBonus = data.rating >= 4 ? 10 : 0;
-    const quizImprovementBonus = observedImprovement >= 30 ? 20 : 0;
-    const totalAward = Math.min(70, baseCompletion + feedbackBonus + quizImprovementBonus);
+    const quizImprovementBonus = !isSupported && observedImprovement >= 30 ? 20 : 0;
+    const supportCompletionBonus = isSupported ? 20 : 0;
+    const totalAward = Math.min(70, baseCompletion + feedbackBonus + quizImprovementBonus + supportCompletionBonus);
 
     const breakdown: CreditBreakdown = {
       baseCompletion,
       feedbackBonus,
       quizImprovementBonus,
+      assessmentMode: isSupported ? 'supported' : 'quiz',
+      supportCompletionBonus,
       total: totalAward,
       baselinePercentage,
       finalPercentage,
@@ -720,7 +1004,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     const now = new Date().toISOString();
-    const txId = 'tx-mentor-' + Date.now();
+    const txId = newId('tx-mentor');
 
     setSessions((prev) =>
       prev.map((s) =>
@@ -729,15 +1013,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               ...s,
               status: 'completed',
               completedAt: now,
-              finalQuiz: {
-                answers: data.finalAnswers,
+              baselineQuiz: isSupported ? undefined : s.baselineQuiz,
+              finalQuiz: isSupported ? undefined : {
+                answers: [...data.finalAnswers],
                 score: finalScore,
                 totalQuestions: questions.length,
                 percentage: finalPercentage,
                 completedAt: now,
               },
               rating: data.rating,
-              feedbackComment: data.feedbackComment,
+              feedbackComment: data.feedbackComment?.trim(),
+              goalReview: isSupported ? data.goalReview : undefined,
               creditAwarded: true,
               creditBreakdown: breakdown,
               transactionId: txId,
@@ -746,7 +1032,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       )
     );
 
-    const mentor = users[session.mentorId];
     if (mentor) {
       const prevCredits = mentor.credits;
       const updatedCredits = prevCredits + totalAward;
@@ -765,7 +1050,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         userName: mentor.name,
         amount: totalAward,
         type: 'mentoring_reward',
-        description: `Peer Mentoring verified: "${session.topic}" (${session.subject}) with ${session.studentName}. (Base +${baseCompletion}, Feedback +${feedbackBonus}, Quiz Gain +${quizImprovementBonus})`,
+        description: `Peer Mentoring verified: "${session.topic}" (${session.subject}) with ${session.studentName}. (Base +${baseCompletion}, Feedback +${feedbackBonus}, ${isSupported ? `Supported Participation +${supportCompletionBonus}` : `Quiz Gain +${quizImprovementBonus}`})`,
         relatedSessionId: session.id,
         breakdown,
         timestamp: now,
@@ -780,7 +1065,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     return {
       success: true,
-      message: `Session verified & completed! Observed diagnostic score gain: ${baselinePercentage}% → ${finalPercentage}% (+${observedImprovement} pp). Awarded +${totalAward} Campus Credits to ${session.mentorName}.`,
+      message: isSupported
+        ? `Participation confirmed and goal reflection recorded. Awarded +${totalAward} Campus Credits to ${session.mentorName}.`
+        : `Session verified & completed! Observed diagnostic score gain: ${baselinePercentage}% → ${finalPercentage}% (+${observedImprovement} pp). Awarded +${totalAward} Campus Credits to ${session.mentorName}.`,
       breakdown,
     };
   };
@@ -792,6 +1079,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     userId: string,
     category: 'snack' | 'legend_combo'
   ) => {
+    const users = usersRef.current;
+    const redemptions = redemptionsRef.current;
     const user = users[userId];
     if (!user) return { available: false, reason: 'User not found', periodKey: '' };
 
@@ -897,8 +1186,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Redeem Canteen Item (Freebie or Credit Purchase)
   const redeemCanteenItem = (rewardItem: RewardItem, isFreebieClaim: boolean) => {
-    const user = currentUser;
+    const user = getCurrentUser();
     const tierInfo = getUserTier(user.credits);
+    const catalogueItem = REWARD_CATALOGUE.find((item) => item.id === rewardItem.id);
+    if (!catalogueItem || catalogueItem.isMajorVault || catalogueItem.category === 'tech_vault') {
+      return { success: false, message: 'Choose a canteen or marketplace reward from the catalogue.' };
+    }
+    // Prices, tiers, and categories come from the catalogue, never a stale UI card.
+    rewardItem = catalogueItem;
+    if (user.credits < TIER_DEFINITIONS[rewardItem.minTier].threshold) {
+      return { success: false, message: `This reward requires ${rewardItem.minTier} tier.` };
+    }
+    if (rewardItem.id === 'meal-legend-combo') isFreebieClaim = true;
+    if (isFreebieClaim && rewardItem.category !== 'snacks' && rewardItem.id !== 'meal-legend-combo') {
+      return { success: false, message: 'Only snacks and the Legend welcome combo qualify as tier freebies.' };
+    }
 
     let periodKey = 'standard-purchase';
     let cost = rewardItem.creditCost;
@@ -924,8 +1226,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const now = new Date().toISOString();
-    const code = `CL-${rewardItem.category.toUpperCase().slice(0, 4)}-${Math.floor(1000 + Math.random() * 9000)}`;
-    const redemptionId = 'redemption-' + Date.now();
+    const redemptionId = newId('redemption');
+    const code = `CL-${rewardItem.category.toUpperCase().slice(0, 4)}-${redemptionId.slice('redemption-'.length).toUpperCase()}`;
 
     const newRedemption: CanteenRedemption = {
       id: redemptionId,
@@ -957,7 +1259,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }));
 
       const newTx: CreditTransaction = {
-        id: 'tx-redeem-' + Date.now(),
+        id: newId('tx-redeem'),
         userId: user.id,
         userName: user.name,
         amount: -cost,
@@ -979,8 +1281,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Demo Scan action (Simulate Canteen Counter Scanner)
   const scanCanteenCode = (redemptionId: string) => {
+    const redemptions = redemptionsRef.current;
     const item = redemptions.find((r) => r.id === redemptionId);
     if (!item) return { success: false, message: 'Redemption record not found.' };
+    const user = getCurrentUser();
+    if (item.userId !== user.id && !user.roles.includes('admin')) {
+      return { success: false, message: 'Only the voucher owner or admin can simulate collection.' };
+    }
     if (item.status === 'scanned_and_collected') {
       return { success: false, message: 'This QR code was already scanned & collected.' };
     }
@@ -1006,7 +1313,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Request Major Tech Vault Reward (Legend Tier 10,000 CR)
   const requestMajorReward = (rewardItem: RewardItem) => {
-    const user = currentUser;
+    const majorRewardRequests = majorRewardRequestsRef.current;
+    const user = getCurrentUser();
+    const catalogueItem = REWARD_CATALOGUE.find((item) => item.id === rewardItem.id && item.isMajorVault);
+    if (!catalogueItem) return { success: false, message: 'Choose a Tech Vault reward from the catalogue.' };
+    rewardItem = catalogueItem;
     if (user.credits < 10000) {
       return {
         success: false,
@@ -1026,7 +1337,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const newReq: MajorRewardRequest = {
-      id: 'req-' + Date.now(),
+      id: newId('req'),
       userId: user.id,
       userName: user.name,
       userEmail: user.email,
@@ -1047,8 +1358,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Admin Controls
   const approveMajorReward = (requestId: string, approve: boolean, adminNote?: string) => {
+    if (!getCurrentUser().roles.includes('admin')) {
+      return { success: false, message: 'Only admins can review reward requests.' };
+    }
+    const majorRewardRequests = majorRewardRequestsRef.current;
     const req = majorRewardRequests.find((m) => m.id === requestId);
     if (!req) return { success: false, message: 'Request not found.' };
+    if (req.status !== 'pending_review') {
+      return { success: false, message: 'This reward request has already been reviewed.' };
+    }
 
     const now = new Date().toISOString();
     setMajorRewardRequests((prev) =>
@@ -1071,6 +1389,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const toggleMentorVerification = (userId: string) => {
+    if (!getCurrentUser().roles.includes('admin')) {
+      return { success: false, message: 'Only admins can change mentor verification.' };
+    }
+    const users = usersRef.current;
     const target = users[userId];
     if (!target) return { success: false, message: 'User not found.' };
 
@@ -1096,6 +1418,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Calculate Impact Metrics strictly from seeded and demo activity records
   const getImpactMetrics = (): ImpactMetrics => {
+    const books = booksRef.current;
+    const sessions = sessionsRef.current;
+    const transactions = transactionsRef.current;
+    const users = usersRef.current;
     const reusedBooksCount = books.filter(
       (b) => b.status === 'donated' || b.status === 'lent_out' || b.status === 'sold'
     ).length;
@@ -1103,9 +1429,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Approximate ₹350 average textbook cost saved per reused or lent book
     const estimatedSavings = reusedBooksCount * 350;
 
-    // Completed mentoring sessions (each 45 minutes = 0.75 hours)
-    const completedSessionsCount = sessions.filter((s) => s.status === 'completed').length;
-    const mentoringHours = Math.round(completedSessionsCount * 0.75 * 10) / 10;
+    // Older sessions did not store a duration and used the 45-minute default.
+    const completedMinutes = sessions.filter((session) => session.status === 'completed')
+      .reduce((total, session) => total + (session.sessionMinutes ?? 45), 0);
+    const mentoringHours = Math.round(completedMinutes / 60 * 100) / 100;
 
     return {
       booksReused: reusedBooksCount,
@@ -1123,6 +1450,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const clearNotifications = () => {
+    const currentUser = getCurrentUser();
     setNotifications((prev) => prev.filter((n) => n.userId !== currentUser.id));
   };
 
@@ -1137,6 +1465,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         notifications,
         redemptions,
         majorRewardRequests,
+        resetGeneration,
         showMilestoneModal,
         setShowMilestoneModal,
         switchUser,
@@ -1151,6 +1480,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         acceptMentoringSession,
         declineMentoringSession,
         finishMentoringSession,
+        saveLearningPlan,
+        reviewLearningPlan,
+        respondToLearningPlan,
         confirmAndFinalizeSession,
         checkFreebieAvailable,
         redeemCanteenItem,

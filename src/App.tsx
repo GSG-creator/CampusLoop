@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { DemoBar } from './components/DemoBar';
 import { Navbar } from './components/Navbar';
@@ -16,9 +16,16 @@ import { FloatingLoopAI } from './components/FloatingLoopAI';
 import { Heart, Sparkles, BookOpen, GraduationCap, ShieldCheck } from 'lucide-react';
 
 const MainApp: React.FC = () => {
-  const { currentUser, showMilestoneModal, setShowMilestoneModal } = useApp();
+  const { currentUser, users, switchUser, showMilestoneModal, setShowMilestoneModal } = useApp();
   const [activeTab, setActiveTab] = useState<string>('books');
   const [isListingModalOpen, setIsListingModalOpen] = useState(false);
+
+  useEffect(() => {
+    setIsListingModalOpen(false);
+    if (!currentUser.roles.includes('admin')) {
+      setActiveTab((tab) => tab === 'admin' ? 'books' : tab);
+    }
+  }, [currentUser.id]);
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
@@ -33,7 +40,7 @@ const MainApp: React.FC = () => {
       />
 
       {/* 3. Main Workspace Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <main key={`content-${currentUser.id}`} className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {activeTab === 'books' && (
           <BookExchange onOpenListingModal={() => setIsListingModalOpen(true)} />
         )}
@@ -62,14 +69,15 @@ const MainApp: React.FC = () => {
 
         {activeTab === 'wallet' && <WalletView />}
 
-        {activeTab === 'admin' && <AdminAuditView />}
+        {activeTab === 'admin' && currentUser.roles.includes('admin') && <AdminAuditView />}
       </main>
 
       {/* Floating Role-Aware LOOP AI Assistant */}
-      <FloatingLoopAI onNavigateTab={setActiveTab} />
+      <FloatingLoopAI key={`chat-${currentUser.id}`} onNavigateTab={setActiveTab} />
 
       {/* 4. Create Listing Modal */}
       <CreateListingModal
+        key={`listing-${currentUser.id}`}
         isOpen={isListingModalOpen}
         onClose={() => setIsListingModalOpen(false)}
       />
@@ -77,9 +85,12 @@ const MainApp: React.FC = () => {
       {/* 5. 10,000 Credit Milestone WOW Celebration Modal */}
       <MilestoneCelebrationModal
         isOpen={showMilestoneModal}
+        targetUser={users.rohan}
+        isOwnMilestone={currentUser.id === 'rohan'}
         onClose={() => setShowMilestoneModal(false)}
         onExploreVault={() => {
           setShowMilestoneModal(false);
+          if (currentUser.id !== 'rohan') switchUser('rohan');
           setActiveTab('rewards');
         }}
       />
@@ -110,10 +121,17 @@ const MainApp: React.FC = () => {
   );
 };
 
+const ResettableApp: React.FC = () => {
+  const { resetGeneration } = useApp();
+  // Reset local forms, filters, chats and pending UI callbacks even when the
+  // selected persona was already Aarav. The shared provider stays mounted.
+  return <MainApp key={resetGeneration} />;
+};
+
 export default function App() {
   return (
     <AppProvider>
-      <MainApp />
+      <ResettableApp />
     </AppProvider>
   );
 }

@@ -31,6 +31,8 @@ import {
   MentoringSession,
 } from '../types';
 import { sendLoopAiQuery, PRACTICE_QUIZZES } from '../services/loopAiService';
+import { RequestMentoringModal } from './RequestMentoringModal';
+import { LoopAISessionCard } from './LoopAISessionCard';
 
 interface FloatingLoopAIProps {
   onNavigateTab: (tab: string) => void;
@@ -45,7 +47,6 @@ export const FloatingLoopAI: React.FC<FloatingLoopAIProps> = ({ onNavigateTab })
     redemptions,
     checkFreebieAvailable,
     reserveBook,
-    requestMentoringSession,
   } = useApp();
 
   const [isOpen, setIsOpen] = useState(false);
@@ -60,13 +61,14 @@ export const FloatingLoopAI: React.FC<FloatingLoopAIProps> = ({ onNavigateTab })
 
   // Confirmation modal/action state: cardId -> { status: 'pending' | 'confirmed' | 'rejected', message?: string }
   const [confirmedActions, setConfirmedActions] = useState<Record<string, string>>({});
+  const [mentoringDraft, setMentoringDraft] = useState<LoopAiActionCard['draftMentoringData']>();
 
   // Chat message history
   const [messages, setMessages] = useState<LoopAiMessage[]>([
     {
       id: 'welcome',
       sender: 'assistant',
-      status: 'live',
+      status: 'system_direct',
       text: `Hello **${currentUser.name}**! 👋 I am **LOOP AI**, your role-aware campus copilot.\n\nI can help you search textbooks, schedule verified peer tutoring, check your canteen perks, track your credits toward the **10,000 CR Tech Vault**, or generate practice quizzes.`,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       actionCards: [
@@ -169,24 +171,7 @@ export const FloatingLoopAI: React.FC<FloatingLoopAIProps> = ({ onNavigateTab })
       return;
     }
 
-    const res = requestMentoringSession({
-      mentorId: draft.mentorId,
-      subject: draft.subject,
-      topic: draft.topic,
-      grade: draft.grade,
-      date: draft.date,
-      time: draft.time,
-      description: draft.description,
-      baselineAnswers: [0, 0, 0],
-    });
-
-    if (res.success) {
-      const draftKey = `${draft.mentorId}-${draft.topic}`;
-      setConfirmedActions((prev) => ({ ...prev, [draftKey]: 'Mentoring request submitted and verified!' }));
-      showFeedback(`Mentoring request submitted to ${draft.mentorName}!`);
-    } else {
-      showFeedback(res.message);
-    }
+    setMentoringDraft(draft);
   };
 
   // Interactive Quiz handler
@@ -449,6 +434,10 @@ export const FloatingLoopAI: React.FC<FloatingLoopAIProps> = ({ onNavigateTab })
                                 </div>
                               )}
 
+                              {card.type === 'session' && card.sessionData && (
+                                <LoopAISessionCard session={card.sessionData} onOpen={() => onNavigateTab('mentoring')} />
+                              )}
+
                               {/* Mentor Card */}
                               {card.type === 'mentor' && card.mentorData && (
                                 <div className="space-y-2">
@@ -475,7 +464,7 @@ export const FloatingLoopAI: React.FC<FloatingLoopAIProps> = ({ onNavigateTab })
                                     </div>
                                   </div>
                                   <div className="flex items-center justify-between text-[11px] text-slate-600 bg-slate-50 p-2 rounded-lg">
-                                    <span>Rating: <strong>★ {card.mentorData.rating}</strong></span>
+                                    <span>Rating: <strong>{card.mentorData.rating > 0 ? `★ ${card.mentorData.rating}` : 'No ratings yet'}</strong></span>
                                     <span>Completed Sessions: <strong>{card.mentorData.completedSessions}</strong></span>
                                   </div>
                                   <button
@@ -521,7 +510,7 @@ export const FloatingLoopAI: React.FC<FloatingLoopAIProps> = ({ onNavigateTab })
                                       className="w-full py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs transition-colors flex items-center justify-center gap-1"
                                     >
                                       <Check className="w-3.5 h-3.5" />
-                                      <span>Confirm & Submit Mentoring Request</span>
+                                      <span>Review Details & Take Baseline Quiz</span>
                                     </button>
                                   )}
                                 </div>
@@ -778,6 +767,12 @@ export const FloatingLoopAI: React.FC<FloatingLoopAIProps> = ({ onNavigateTab })
           )}
         </div>
       )}
+      <RequestMentoringModal
+        isOpen={!!mentoringDraft}
+        initialDraft={mentoringDraft}
+        onClose={() => setMentoringDraft(undefined)}
+        onSuccess={showFeedback}
+      />
     </>
   );
 };

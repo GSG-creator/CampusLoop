@@ -26,6 +26,8 @@ import {
   BookListing,
 } from '../types';
 import { sendLoopAiQuery } from '../services/loopAiService';
+import { RequestMentoringModal } from './RequestMentoringModal';
+import { LoopAISessionCard } from './LoopAISessionCard';
 
 const PRESET_QUESTIONS = [
   {
@@ -68,17 +70,14 @@ export const LoopAIView: React.FC<{
     redemptions,
     checkFreebieAvailable,
     reserveBook,
-    requestMentoringSession,
   } = useApp();
 
   const [messages, setMessages] = useState<LoopAiMessage[]>([
     {
       id: 'welcome',
       sender: 'assistant',
-      status: 'live',
+      status: 'system_direct',
       text: `Hello **${currentUser.name}**! 👋 I am **LOOP AI**, your role-aware campus academic companion.\n\nI can help you search textbooks, schedule verified peer tutoring, check your canteen perks, track your credits toward the **10,000 CR Tech Vault**, or generate practice quizzes.`,
-      thoughtProcess: `1. Verified active session for ${currentUser.name} (${currentUser.grade || 'Campus'}, ${currentUser.credits} CR).\n2. Initialized verified CBSE STEM and CampusLoop knowledge bases.`,
-      model: 'gemini-3.8-flash',
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       actionCards: [
         {
@@ -106,6 +105,7 @@ export const LoopAIView: React.FC<{
 
   // Confirmation state for actions
   const [confirmedActions, setConfirmedActions] = useState<Record<string, string>>({});
+  const [mentoringDraft, setMentoringDraft] = useState<LoopAiActionCard['draftMentoringData']>();
 
   const chatBottomRef = useRef<HTMLDivElement>(null);
 
@@ -200,27 +200,7 @@ export const LoopAIView: React.FC<{
       return;
     }
 
-    const res = requestMentoringSession({
-      mentorId: draft.mentorId,
-      subject: draft.subject,
-      topic: draft.topic,
-      grade: draft.grade,
-      date: draft.date,
-      time: draft.time,
-      description: draft.description,
-      baselineAnswers: [0, 0, 0],
-    });
-
-    if (res.success) {
-      const draftKey = `${draft.mentorId}-${draft.topic}`;
-      setConfirmedActions((prev) => ({
-        ...prev,
-        [draftKey]: 'Mentoring request submitted and verified!',
-      }));
-      showFeedback(`Mentoring request submitted to ${draft.mentorName}!`);
-    } else {
-      showFeedback(res.message);
-    }
+    setMentoringDraft(draft);
   };
 
   const handleSelectQuizOption = (messageId: string, questionId: string, optionIdx: number) => {
@@ -355,8 +335,9 @@ export const LoopAIView: React.FC<{
                           {msg.status === 'offline'
                             ? 'Offline Direct Mode'
                             : msg.status === 'system_direct'
-                            ? 'System Database Match'
-                            : msg.model || 'gemini-3.8-flash'}
+                            ? 'CampusLoop Demo Data'
+                            : msg.status === 'rate_limited' ? 'Request Limit Reached'
+                            : msg.model || 'AI Response'}
                         </span>
                         <span>{msg.timestamp}</span>
                       </div>
@@ -449,6 +430,10 @@ export const LoopAIView: React.FC<{
                             </div>
                           )}
 
+                          {card.type === 'session' && card.sessionData && (
+                            <LoopAISessionCard session={card.sessionData} onOpen={onNavigateToMentoring} />
+                          )}
+
                           {/* Mentor Card */}
                           {card.type === 'mentor' && card.mentorData && (
                             <div className="space-y-2.5">
@@ -475,7 +460,7 @@ export const LoopAIView: React.FC<{
                                 </div>
                               </div>
                               <div className="flex items-center justify-between text-xs text-slate-600 bg-slate-50 p-2.5 rounded-xl">
-                                <span>Student Rating: <strong>★ {card.mentorData.rating}</strong></span>
+                                <span>Student Rating: <strong>{card.mentorData.rating > 0 ? `★ ${card.mentorData.rating}` : 'No ratings yet'}</strong></span>
                                 <span>Completed Sessions: <strong>{card.mentorData.completedSessions}</strong></span>
                               </div>
                               <button
@@ -521,7 +506,7 @@ export const LoopAIView: React.FC<{
                                   className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs transition-colors flex items-center justify-center gap-1.5"
                                 >
                                   <Check className="w-4 h-4" />
-                                  <span>Confirm & Submit Mentoring Request</span>
+                                  <span>Review Details & Take Baseline Quiz</span>
                                 </button>
                               )}
                             </div>
@@ -810,6 +795,12 @@ export const LoopAIView: React.FC<{
           </div>
         </div>
       </div>
+      <RequestMentoringModal
+        isOpen={!!mentoringDraft}
+        initialDraft={mentoringDraft}
+        onClose={() => setMentoringDraft(undefined)}
+        onSuccess={showFeedback}
+      />
     </div>
   );
 };

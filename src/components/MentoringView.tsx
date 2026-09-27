@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import { MentoringSession } from '../types';
 import { RequestMentoringModal } from './RequestMentoringModal';
 import { LearnerConfirmationModal } from './LearnerConfirmationModal';
+import { LearningPlanPanel, SessionMeetingDetails, TeachingSources } from './LearningPlanPanel';
 import {
   GraduationCap,
   Sparkles,
@@ -50,10 +51,10 @@ export const MentoringView: React.FC = () => {
 
   // Rohan's current credits & milestone progress
   const rohan = users.rohan;
-  const isRohanAtMilestone = (rohan?.credits || 0) >= 10010;
+  const isRohanAtMilestone = (rohan?.credits ?? 0) >= 10000;
 
   // Filter sessions relevant to the current user or platform
-  const isMentor = currentUser.isVerifiedMentor || currentUser.roles.includes('mentor');
+  const isMentor = currentUser.isVerifiedMentor === true;
   const isAdmin = currentUser.roles.includes('admin');
 
   const incomingRequestsForMe = sessions.filter(
@@ -72,7 +73,10 @@ export const MentoringView: React.FC = () => {
       s.status === 'awaiting_learner_confirmation'
   );
 
-  const completedSessions = sessions.filter((s) => s.status === 'completed');
+  const isParticipant = (session: MentoringSession) => session.mentorId === currentUser.id || session.studentId === currentUser.id || isAdmin;
+  const completedSessions = sessions.filter((s) => s.status === 'completed' && isParticipant(s));
+  const supportedSessions = sessions.filter((s) => s.learningSupport && s.status !== 'declined' && isParticipant(s));
+  const pendingRequestsForMe = sessions.filter((session) => session.studentId === currentUser.id && session.status === 'requested' && !session.learningSupport);
 
   const handleAccept = (sessionId: string) => {
     const res = acceptMentoringSession(sessionId);
@@ -119,10 +123,10 @@ export const MentoringView: React.FC = () => {
             <span>Peer Mentoring & Credit Engine</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight mb-2">
-            Free Academic Coaching by Star Seniors
+            Learn at your pace. Plan support together.
           </h1>
           <p className="text-violet-100/90 text-sm leading-relaxed mb-4">
-            Juniors pay <strong className="text-emerald-300">0 Credits</strong> for targeted concept coaching. Verified mentors earn up to <strong className="text-amber-300">+70 Campus Credits</strong> per completed session with verified learner attendance and observed diagnostic quiz improvement!
+            Free peer mentoring with an optional personalized learning plan. Choose support for memory, processing, reading, communication, energy or movement. Share what helps you learn; no diagnosis is needed.
           </p>
 
           {/* Persona Guidance Banner */}
@@ -136,17 +140,17 @@ export const MentoringView: React.FC = () => {
             </div>
             {currentUser.id === 'aarav' && (
               <p className="text-violet-100 text-[11px] leading-relaxed">
-                👉 <strong>Demo Guide (Aarav):</strong> Click <strong>"Request Academic Help"</strong> below. Select <strong>Rohan</strong> for <em>Applications of Trigonometry</em>, establish your baseline quiz (1/3), then switch to Rohan in the top bar to accept!
+                <strong>Learner:</strong> Request help with your chosen topic. Select personalized learning support to share your preferences, then review the plan your mentor prepares. You can ask for changes.
               </p>
             )}
             {currentUser.id === 'rohan' && (
               <p className="text-violet-100 text-[11px] leading-relaxed">
-                👉 <strong>Demo Guide (Rohan):</strong> You have <strong>9,940 CR</strong>. Accept Aarav's incoming request and click <strong>"Simulate & Mark Session Finished"</strong>. Then switch to Aarav to complete the final quiz to unlock your <strong>10,010 CR Milestone</strong>!
+                <strong>Mentor:</strong> Review the learner’s preferences, accept the request and create an editable curriculum plan. Share it with the learner and teacher before the session. Mark the session finished after coaching; the learner confirms attendance.
               </p>
             )}
             {currentUser.id === 'meera' && (
               <p className="text-violet-100 text-[11px] leading-relaxed">
-                👉 <strong>Demo Guide (Meera):</strong> You are a Grade 12 senior. You can monitor platform exchanges or switch to Aarav/Rohan to test the mentoring workflow.
+                <strong>Senior learner:</strong> You can request support too. Only verified mentors can create a plan for their assigned learner.
               </p>
             )}
             {currentUser.id === 'ananya' && (
@@ -160,22 +164,22 @@ export const MentoringView: React.FC = () => {
         {/* Milestone Tracker Pill */}
         <div className="mt-4 sm:mt-0 sm:absolute sm:right-8 sm:top-8 bg-black/30 backdrop-blur-md p-4 rounded-2xl border border-white/15 text-xs max-w-xs">
           <div className="flex items-center justify-between font-bold text-amber-300 mb-1">
-            <span>Rohan's Star Milestone</span>
-            <span className="font-mono text-white">{rohan?.credits || 9940} / 10,010 CR</span>
+            <span>Rohan's Contribution Progress</span>
+            <span className="font-mono text-white">{rohan?.credits ?? 0} / 10,000 CR</span>
           </div>
           <div className="w-full bg-white/20 rounded-full h-2 overflow-hidden mb-1.5">
             <div
               className="bg-amber-400 h-full rounded-full transition-all duration-500"
               style={{
-                width: `${Math.min(100, ((rohan?.credits || 9940) / 10010) * 100)}%`,
+                width: `${Math.min(100, ((rohan?.credits ?? 0) / 10000) * 100)}%`,
               }}
             />
           </div>
           <p className="text-[10px] text-slate-300">
             {isRohanAtMilestone ? (
-              <strong className="text-emerald-400">🎉 10,010 CR Target Achieved!</strong>
+              <strong className="text-emerald-400">10,000 CR eligibility milestone reached.</strong>
             ) : (
-              <span>Need exactly <strong>+70 CR</strong> from Aarav's session to reach 10,010.</span>
+              <span>Mentoring awards follow learner-confirmed participation. Feedback should reflect the learner’s experience.</span>
             )}
           </p>
         </div>
@@ -184,20 +188,44 @@ export const MentoringView: React.FC = () => {
       {/* Action Bar for Juniors */}
       <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
         <div>
-          <h3 className="font-bold text-slate-900 text-sm">Need Help with Math or Science?</h3>
-          <p className="text-xs text-slate-500">
-            Book 1-on-1 peer sessions with verified Grade 12 academic mentors.
+          <h3 className="font-bold text-slate-900 text-base">Choose the support that works for you</h3>
+          <p className="text-sm text-slate-600">
+            Request a subject, a comfortable session length and how you prefer to respond.
           </p>
         </div>
 
         <button
           onClick={() => setIsRequestModalOpen(true)}
-          className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-200 transition-all flex items-center gap-1.5"
+          className="min-h-11 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm shadow-md shadow-indigo-200 transition-all flex items-center gap-1.5"
         >
           <GraduationCap className="w-4 h-4" />
           <span>Request Academic Help (0 Credits)</span>
         </button>
       </div>
+
+      <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-5 space-y-3 text-base text-slate-800">
+        <h2 className="font-bold text-lg">A curriculum plan shaped around your learning needs</h2>
+        <p className="leading-relaxed">Your student mentor can prepare three editable lessons with clear steps, examples, practice, reminders and breaks. Review the plan together and ask for changes. Teachers can review the plan and add guidance.</p>
+        <p className="leading-relaxed">Supported sessions use a short learner reflection instead of a compulsory quiz. Practising, maintaining a skill and identifying more support are all valid outcomes. Mentor completion credits do not depend on cognitive improvement.</p>
+        <details><summary className="cursor-pointer font-semibold text-indigo-800">About the teaching approaches</summary><div className="mt-3"><TeachingSources /></div></details>
+      </div>
+
+      {supportedSessions.length > 0 && <section className="space-y-4" aria-label="Your personalized learning plans">
+        <h2 className="text-xl font-bold text-slate-900">Your personalized learning plans</h2>
+        {supportedSessions.map((session) => <article key={session.id} className="space-y-2">
+          <p className="text-sm text-slate-600">{session.date} at {session.time} · {session.status.replaceAll('_', ' ')}</p>
+          <LearningPlanPanel sessionId={session.id} />
+        </article>)}
+      </section>}
+
+      {pendingRequestsForMe.length > 0 && <section className="space-y-3" aria-label="Your pending mentoring requests">
+        <h2 className="text-lg font-bold text-slate-900">Your pending requests</h2>
+        {pendingRequestsForMe.map((session) => <article key={session.id} className="rounded-2xl border border-slate-200 bg-white p-4 space-y-2">
+          <h3 className="font-bold text-slate-900">{session.topic}</h3>
+          <p className="text-sm text-slate-600">{session.date} at {session.time} · Awaiting {session.mentorName}’s acceptance</p>
+          <SessionMeetingDetails session={session} />
+        </article>)}
+      </section>}
 
       {/* Section 1: Incoming Requests (For Mentor) */}
       {isMentor && (
@@ -250,10 +278,11 @@ export const MentoringView: React.FC = () => {
                     <p className="text-slate-600 text-[11px]">
                       Student: <strong>{session.studentName}</strong> • Date: <strong>{session.date}</strong> at <strong>{session.time}</strong>
                     </p>
+                    <SessionMeetingDetails session={session} />
 
                     <div className="flex items-center gap-2 pt-1 text-[11px]">
                       <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-900 font-semibold">
-                        Diagnostic Baseline: {session.baselineQuiz?.score}/3 ({session.baselineQuiz?.percentage}%)
+                        {session.assessmentMode === 'supported' ? 'Supported learning · learner reflection' : <>Diagnostic Baseline: {session.baselineQuiz?.score}/3 ({session.baselineQuiz?.percentage}%)</>}
                       </span>
                       <span className="text-slate-500 italic">
                         Potential reward: Up to <strong>+70 CR</strong>
@@ -305,6 +334,7 @@ export const MentoringView: React.FC = () => {
           <div className="space-y-3">
             {activeSessionsForMe.map((session) => {
               const isAssignedMentor = session.mentorId === currentUser.id;
+              const planReady = !session.learningSupport || (!!session.learningPlan && ['shared', 'reviewed'].includes(session.learningPlan.status) && session.learningPlan.learnerResponse === 'agreed');
               return (
                 <div
                   key={session.id}
@@ -326,10 +356,13 @@ export const MentoringView: React.FC = () => {
                     <p className="text-slate-500 text-[11px]">
                       Scheduled for: <strong>{session.date}</strong> at <strong>{session.time}</strong>
                     </p>
+                    <SessionMeetingDetails session={session} />
 
                     <div className="p-2 bg-amber-50 rounded-xl border border-amber-200 text-amber-900 text-[11px] mt-1">
                       <span>
-                        Baseline: {session.baselineQuiz?.score}/3 ({session.baselineQuiz?.percentage}%). Target final score: 3/3 for +20 CR observed gain bonus.
+                        {session.assessmentMode === 'supported'
+                          ? 'Follow the shared learning plan, offer breaks and use the learner’s chosen way to respond. Completion credits do not depend on score gains.'
+                          : <>Baseline: {session.baselineQuiz?.score}/3 ({session.baselineQuiz?.percentage}%). A gain of at least 30 percentage points qualifies for the quiz bonus.</>}
                       </span>
                     </div>
                   </div>
@@ -339,12 +372,14 @@ export const MentoringView: React.FC = () => {
                       <div className="flex flex-col items-end gap-1">
                         <button
                           onClick={() => handleFinishSession(session.id)}
-                          className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-xs flex items-center gap-1.5"
+                          disabled={!planReady}
+                          className="min-h-11 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-sm shadow-xs flex items-center gap-1.5"
                           title="Simulate session completion & notify student"
                         >
                           <Play className="w-3.5 h-3.5 fill-white" />
                           <span>Simulate / Mark Session Finished</span>
                         </button>
+                        {!planReady && <p className="max-w-xs text-sm text-amber-900">Share a learning plan and ask the learner to agree before marking this session finished.</p>}
                         <span className="text-[10px] text-amber-700 font-semibold bg-amber-100/80 px-2 py-0.5 rounded">
                           Session-Time Simulation (Demo Mode)
                         </span>
@@ -377,10 +412,10 @@ export const MentoringView: React.FC = () => {
               </div>
               <div>
                 <h3 className="font-extrabold text-amber-950 text-sm">
-                  Action Required: Awaiting Learner Attendance & Final Quiz
+                  Action Required: Learner Confirmation
                 </h3>
                 <p className="text-[11px] text-amber-800">
-                  Credits are withheld until the junior verifies attendance, completes the final quiz, and submits feedback.
+                  Confirm attendance and share feedback. Supported sessions use a goal reflection; standard sessions use the final quiz.
                 </p>
               </div>
             </div>
@@ -406,8 +441,9 @@ export const MentoringView: React.FC = () => {
                     <p className="text-slate-600 text-[11px]">
                       Mentor <strong>{session.mentorName}</strong> has completed the coaching session.
                     </p>
+                    <SessionMeetingDetails session={session} />
                     <p className="text-amber-800 text-[11px] font-semibold">
-                      Learner: <strong>{session.studentName}</strong> (Baseline: {session.baselineQuiz?.score}/3)
+                      Learner: <strong>{session.studentName}</strong> {session.assessmentMode === 'supported' ? '(Supported learning)' : <>(Baseline: {session.baselineQuiz?.score}/3)</>}
                     </p>
                   </div>
 
@@ -418,7 +454,7 @@ export const MentoringView: React.FC = () => {
                         className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-200 flex items-center gap-1.5"
                       >
                         <CheckCircle2 className="w-4 h-4" />
-                        <span>Take Final Quiz & Confirm Attendance</span>
+                        <span>{session.assessmentMode === 'supported' ? 'Reflect & Confirm Attendance' : 'Take Final Quiz & Confirm Attendance'}</span>
                       </button>
                     ) : (
                       <div className="text-right">
@@ -447,10 +483,10 @@ export const MentoringView: React.FC = () => {
             </div>
             <div>
               <h3 className="font-bold text-slate-900 text-sm">
-                Completed & Verified Mentoring Ledger ({completedSessions.length})
+                Your Completed Mentoring Sessions ({completedSessions.length})
               </h3>
               <p className="text-[11px] text-slate-500">
-                Auditable credit engine breakdowns with observed diagnostic scores
+                Session outcomes and credit details for your mentoring sessions
               </p>
             </div>
           </div>
@@ -482,11 +518,12 @@ export const MentoringView: React.FC = () => {
                       <p className="text-slate-600 text-[11px] mt-0.5">
                         Mentor: <strong>{session.mentorName}</strong> • Learner: <strong>{session.studentName}</strong> • Completed: {new Date(session.completedAt || '').toLocaleString()}
                       </p>
+                      <SessionMeetingDetails session={session} />
                     </div>
 
                     <div className="text-right">
                       <span className="font-mono font-extrabold text-base text-emerald-700 block">
-                        +{b?.total || 70} CR
+                        +{b?.total ?? 0} CR
                       </span>
                       <span className="text-[10px] text-slate-400 font-mono">
                         TX: {session.transactionId?.slice(0, 14)}...
@@ -498,22 +535,24 @@ export const MentoringView: React.FC = () => {
                   <div className="p-3 bg-white rounded-xl border border-slate-200 grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
                     <div>
                       <span className="text-slate-400 block">Base Attendance</span>
-                      <span className="font-bold text-slate-800">+{b?.baseCompletion || 40} CR</span>
+                      <span className="font-bold text-slate-800">+{b?.baseCompletion ?? 0} CR</span>
                     </div>
                     <div>
                       <span className="text-slate-400 block">Rating ({session.rating}★)</span>
-                      <span className="font-bold text-slate-800">+{b?.feedbackBonus || 10} CR</span>
+                      <span className="font-bold text-slate-800">+{b?.feedbackBonus ?? 0} CR</span>
                     </div>
                     <div>
-                      <span className="text-slate-400 block">Observed Quiz Gain</span>
+                      <span className="text-slate-400 block">{session.assessmentMode === 'supported' ? 'Supported Session Completion' : 'Observed Quiz Gain'}</span>
                       <span className="font-bold text-indigo-700">
-                        +{b?.observedImprovement || 67} pp (+{b?.quizImprovementBonus || 20} CR)
+                        {session.assessmentMode === 'supported' ? `+${b?.supportCompletionBonus ?? 0} CR` : <>+{b?.observedImprovement ?? 0} pp (+{b?.quizImprovementBonus ?? 0} CR)</>}
                       </span>
                     </div>
                     <div>
-                      <span className="text-slate-400 block">Diagnostic Scores</span>
+                      <span className="text-slate-400 block">{session.assessmentMode === 'supported' ? 'Learner Goal Reflection' : 'Diagnostic Scores'}</span>
                       <span className="font-semibold text-slate-700">
-                        {session.baselineQuiz?.score}/3 → {session.finalQuiz?.score}/3
+                        {session.assessmentMode === 'supported'
+                          ? session.goalReview === 'practised' ? 'Practised my goal' : session.goalReview === 'maintained' ? 'Maintained a skill' : session.goalReview === 'needs_more_support' ? 'Would like more support' : 'Not recorded'
+                          : <>{session.baselineQuiz?.score}/3 → {session.finalQuiz?.score}/3</>}
                       </span>
                     </div>
                   </div>
@@ -535,7 +574,7 @@ export const MentoringView: React.FC = () => {
         <h3 className="font-bold text-slate-900 text-sm">Verified Star Mentors Directory</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {Object.values(users)
-            .filter((u) => u.isVerifiedMentor || u.roles.includes('mentor'))
+            .filter((u) => u.isVerifiedMentor === true)
             .map((mentor) => (
               <div
                 key={mentor.id}
@@ -582,11 +621,12 @@ export const MentoringView: React.FC = () => {
         onSuccess={(msg) => showToast(msg, 'success')}
       />
 
-      <LearnerConfirmationModal
+      {selectedSessionForConfirmation && <LearnerConfirmationModal
+        key={selectedSessionForConfirmation.id}
         session={selectedSessionForConfirmation}
         onClose={() => setSelectedSessionForConfirmation(null)}
         onSuccess={(msg) => showToast(msg, 'success')}
-      />
+      />}
     </div>
   );
 };

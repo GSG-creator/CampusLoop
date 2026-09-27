@@ -34,8 +34,8 @@ export const RewardsView: React.FC = () => {
   } = useApp();
 
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [activeRedemptionForModal, setActiveRedemptionForModal] =
-    useState<CanteenRedemption | null>(null);
+  const [activeRedemptionId, setActiveRedemptionId] = useState<string | null>(null);
+  const activeRedemptionForModal = redemptions.find((item) => item.id === activeRedemptionId) ?? null;
   const [toastMessage, setToastMessage] = useState<{
     text: string;
     type: 'success' | 'error';
@@ -79,7 +79,7 @@ export const RewardsView: React.FC = () => {
     const res = redeemCanteenItem(item, true);
     if (res.success && res.redemption) {
       showToast(res.message, 'success');
-      setActiveRedemptionForModal(res.redemption);
+      setActiveRedemptionId(res.redemption.id);
     } else {
       showToast(res.message, 'error');
     }
@@ -94,7 +94,7 @@ export const RewardsView: React.FC = () => {
     const res = redeemCanteenItem(item, false);
     if (res.success && res.redemption) {
       showToast(res.message, 'success');
-      setActiveRedemptionForModal(res.redemption);
+      setActiveRedemptionId(res.redemption.id);
     } else {
       showToast(res.message, 'error');
     }
@@ -353,7 +353,9 @@ export const RewardsView: React.FC = () => {
           {filteredItems.map((item) => {
             const isMajor = item.isMajorVault;
             const canAfford = currentUser.credits >= item.creditCost;
-            const isEligible = isMajor ? currentUser.credits >= 10000 : canAfford;
+            const meetsTier = currentUser.credits >= TIER_DEFINITIONS[item.minTier].threshold;
+            const isWelcomeCombo = item.creditCost === 0 && item.category === 'meals';
+            const isEligible = meetsTier && (isMajor || (canAfford && (!isWelcomeCombo || legendComboCheck.available)));
             const hasPendingRequest = majorRewardRequests.some(
               (r) => r.userId === currentUser.id && r.rewardId === item.id && r.status === 'pending_review'
             );
@@ -430,12 +432,12 @@ export const RewardsView: React.FC = () => {
                       </button>
                     ) : (
                       <button
-                        onClick={() => handleRedeemWithCredits(item)}
-                        disabled={!canAfford}
+                        onClick={() => isWelcomeCombo ? handleClaimFreebie(item) : handleRedeemWithCredits(item)}
+                        disabled={!isEligible}
                         className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs shadow-xs transition-all flex items-center gap-1"
                       >
                         <Tag className="w-3.5 h-3.5" />
-                        <span>{canAfford ? 'Redeem Voucher' : 'Need More Credits'}</span>
+                        <span>{!meetsTier ? `Requires ${item.minTier} Tier` : isWelcomeCombo && !legendComboCheck.available ? 'Welcome Combo Claimed' : canAfford ? 'Redeem Voucher' : 'Need More Credits'}</span>
                       </button>
                     )}
                   </div>
@@ -473,7 +475,7 @@ export const RewardsView: React.FC = () => {
             {myRedemptions.map((r) => (
               <div
                 key={r.id}
-                onClick={() => setActiveRedemptionForModal(r)}
+                onClick={() => setActiveRedemptionId(r.id)}
                 className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/60 hover:bg-indigo-50/40 cursor-pointer transition-colors flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs"
               >
                 <div className="flex items-center gap-3">
@@ -514,7 +516,7 @@ export const RewardsView: React.FC = () => {
       {/* QR Voucher Modal */}
       <CanteenRedemptionModal
         redemption={activeRedemptionForModal}
-        onClose={() => setActiveRedemptionForModal(null)}
+        onClose={() => setActiveRedemptionId(null)}
         onScanSuccess={(msg) => {
           showToast(msg, 'success');
         }}

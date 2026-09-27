@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { CanteenRedemption } from '../types';
 import {
@@ -25,18 +25,29 @@ export const CanteenRedemptionModal: React.FC<CanteenRedemptionModalProps> = ({
 }) => {
   const { scanCanteenCode } = useApp();
   const [isScanning, setIsScanning] = useState(false);
+  const [scanError, setScanError] = useState('');
+  const scanTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  useEffect(() => {
+    setIsScanning(false);
+    setScanError('');
+    return () => clearTimeout(scanTimer.current);
+  }, [redemption?.id]);
 
   if (!redemption) return null;
 
   const isCollected = redemption.status === 'scanned_and_collected';
 
   const handleDemoScan = () => {
+    setScanError('');
     setIsScanning(true);
-    setTimeout(() => {
+    scanTimer.current = setTimeout(() => {
       const res = scanCanteenCode(redemption.id);
       setIsScanning(false);
       if (res.success) {
         onScanSuccess(res.message);
+      } else {
+        setScanError(res.message);
       }
     }, 400);
   };
@@ -90,7 +101,7 @@ export const CanteenRedemptionModal: React.FC<CanteenRedemptionModalProps> = ({
               </div>
 
               {/* Unique Voucher Code */}
-              <div className="bg-white px-3 py-1.5 rounded-xl border border-slate-200 font-mono font-extrabold text-sm text-slate-900 tracking-wider">
+              <div className="bg-white px-3 py-1.5 rounded-xl border border-slate-200 font-mono font-extrabold text-sm text-slate-900 break-all">
                 {redemption.code}
               </div>
             </div>
@@ -119,6 +130,7 @@ export const CanteenRedemptionModal: React.FC<CanteenRedemptionModalProps> = ({
 
         {/* Demo Scanner Trigger Button */}
         <div className="pt-2">
+          {scanError && <p role="alert" className="mb-2 text-xs text-rose-700">{scanError}</p>}
           {!isCollected ? (
             <button
               onClick={handleDemoScan}

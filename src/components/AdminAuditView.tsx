@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { LearningPlanPanel, SessionMeetingDetails } from './LearningPlanPanel';
 import {
   ShieldCheck,
   Users,
@@ -510,7 +511,7 @@ export const AdminAuditView: React.FC = () => {
                     <th className="py-2.5 px-3">Student</th>
                     <th className="py-2.5 px-3">Mentor</th>
                     <th className="py-2.5 px-3">Status</th>
-                    <th className="py-2.5 px-3">Diagnostic Delta</th>
+                    <th className="py-2.5 px-3">Learning Review</th>
                     <th className="py-2.5 px-3 text-right">Awarded</th>
                   </tr>
                 </thead>
@@ -520,6 +521,7 @@ export const AdminAuditView: React.FC = () => {
                       <td className="py-3 px-3 font-bold text-slate-900">
                         {s.topic}
                         <span className="block text-[10px] text-slate-400 font-normal">{s.subject} ({s.grade})</span>
+                        <SessionMeetingDetails session={s} />
                       </td>
                       <td className="py-3 px-3 text-slate-700">{s.studentName}</td>
                       <td className="py-3 px-3 text-slate-700">{s.mentorName}</td>
@@ -529,10 +531,10 @@ export const AdminAuditView: React.FC = () => {
                         </span>
                       </td>
                       <td className="py-3 px-3 text-slate-600">
-                        {s.baselineQuiz ? `${s.baselineQuiz.score}/3` : '—'}
-                        {' → '}
-                        {s.finalQuiz ? `${s.finalQuiz.score}/3` : '—'}
-                        {s.creditBreakdown && (
+                        {s.assessmentMode === 'supported' ? (
+                          <span>{s.goalReview === 'practised' ? 'Practised the goal' : s.goalReview === 'maintained' ? 'Maintained a skill' : s.goalReview === 'needs_more_support' ? 'More support requested' : 'Supported learning · reflection pending'}</span>
+                        ) : <>{s.baselineQuiz ? `${s.baselineQuiz.score}/${s.baselineQuiz.totalQuestions}` : '—'}{' → '}{s.finalQuiz ? `${s.finalQuiz.score}/${s.finalQuiz.totalQuestions}` : '—'}</>}
+                        {s.creditBreakdown && s.assessmentMode !== 'supported' && (
                           <span className="text-indigo-600 font-semibold ml-1">
                             (+{s.creditBreakdown.observedImprovement} pp)
                           </span>
@@ -548,6 +550,14 @@ export const AdminAuditView: React.FC = () => {
             </div>
           )}
         </div>
+      )}
+
+      {auditTab === 'sessions' && sessions.some((session) => session.learningSupport) && (
+        <section className="space-y-4" aria-label="Teacher learning plan review">
+          <h3 className="text-lg font-bold text-slate-900">Teacher learning plan review</h3>
+          <p className="text-base text-slate-600">Review shared plans against the learner’s preferences and existing teacher guidance. New mentor revisions need a fresh review.</p>
+          {sessions.filter((session) => session.learningSupport && session.status !== 'declined').map((session) => <LearningPlanPanel key={session.id} sessionId={session.id} />)}
+        </section>
       )}
 
       {/* SECTION 5: Book Inventory Audit */}
