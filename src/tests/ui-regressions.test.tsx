@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { test, afterEach } from 'node:test';
 import React from 'react';
 import { act, create, ReactTestInstance, ReactTestRenderer } from 'react-test-renderer';
-import { AppProvider, useApp } from '../context/AppContext';
+import { useApp } from '../context/AppContext';
+import { TestProviders } from './testProviders';
 import { SEED_USERS } from '../data/seedData';
 import { BookExchange } from '../components/BookExchange';
 import { BookCard } from '../components/BookCard';
@@ -42,7 +43,7 @@ async function mount(element: React.ReactElement, fixtures: Record<string, unkno
     clear: () => values.clear(),
   } });
   function Capture() { app = useApp(); return null; }
-  await act(async () => { renderer = create(element.type === App ? element : <AppProvider><Capture />{element}</AppProvider>); });
+  await act(async () => { renderer = create(element.type === App ? element : <TestProviders><Capture />{element}</TestProviders>); });
 }
 
 afterEach(async () => {

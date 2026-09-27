@@ -333,3 +333,67 @@ export interface LoopAiMessage {
   offlineReason?: string;
   confirmedActionId?: string;
 }
+
+// --- VIRTUAL STUDY ROOM TYPES ---
+
+export type StudyRoomMode = 'asl_supported' | 'text_based' | 'hybrid';
+
+export interface StudyRoomParticipant {
+  id: string;
+  name: string;
+  avatar: string;
+  grade: string;
+  role: 'learner' | 'mentor' | 'senior' | 'admin';
+  isAudioOn: boolean;
+  isVideoOn: boolean;
+  isAslMode: boolean;
+  isHandRaised: boolean;
+  isSpeaking: boolean;
+  isSigning: boolean;
+  lastActive: string;
+}
+
+export interface StudyRoomMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  senderAvatar: string;
+  senderRole: string;
+  text: string;
+  timestamp: string;
+  isAslSigned?: boolean;
+  signedLetters?: string[];
+  gestureTag?: string; // e.g. "TRIANGLE", "FORMULA", "HELP", "GREAT JOB"
+  aacQuickChip?: boolean;
+}
+
+export interface StudyRoomWhiteboardNote {
+  id: string;
+  authorId: string;
+  authorName: string;
+  text: string;
+  type: 'concept' | 'formula' | 'solution' | 'doubt';
+  timestamp: string;
+}
+
+export interface VirtualStudyRoom {
+  id: string;
+  title: string;
+  subject: string;
+  topic: string;
+  grade: string;
+  mode: StudyRoomMode;
+  hostId: string;
+  hostName: string;
+  hostAvatar: string;
+  hostBadge?: string;
+  description: string;
+  isLive: boolean;
+  participantCount: number;
+  participants: StudyRoomParticipant[];
+  sessionId?: string; // linked mentoring session if applicable
+  createdAt: string;
+  whiteboardNotes: StudyRoomWhiteboardNote[];
+  messages: StudyRoomMessage[];
+  tags: string[];
+}

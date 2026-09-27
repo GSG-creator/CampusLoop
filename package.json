@@ -14,7 +14,7 @@
     "clean": "node -e \"for (const path of ['dist', 'server.js']) require('node:fs').rmSync(path, { recursive: true, force: true })\"",
     "lint": "tsc --noEmit",
     "test": "npm run test:legacy && npm run test:regression",
-    "test:legacy": "tsx src/tests/verify_step1.ts && tsx src/tests/verify_step2.ts && tsx src/tests/verify_step3.ts && tsx src/tests/verify_loop_ai.ts",
+    "test:legacy": "tsx src/tests/verify_step1.ts && tsx src/tests/verify_step2.ts && tsx src/tests/verify_step3.ts && tsx src/tests/verify_loop_ai.ts && tsx src/tests/verify_a11y_translation.ts && tsx src/tests/verify_virtual_hand_sign.ts && tsx src/tests/verify_virtual_study_rooms.ts",
     "test:regression": "tsx --test src/tests/*.test.ts src/tests/*.test.tsx",
     "gcp-build": "npm run build",
     "smoke:production": "node scripts/smoke-production.mjs"

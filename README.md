@@ -1,6 +1,6 @@
 # CampusLoop
 
-React, Vite and Express demo for campus book sharing, peer mentoring, credits and rewards.
+React, Vite and Express demo for campus book sharing, peer mentoring, credits, rewards and accessibility support.
 
 ## Run locally
 
@@ -48,6 +48,38 @@ Switch to the assigned mentor (Rohan in the demo), accept the request, then crea
 Supported sessions finish with a learner participation confirmation and reflection. Practising, maintaining a skill and needing more support receive the same participation credit; no fabricated quiz scores are shown. A full demo reset clears the plans, preferences and session activity too.
 
 See [the teaching sources and design notes](docs/accessible-mentoring.md) for EEF (UK) and CAST (US) guidance. Drafts require mentor/learner adaptation and teacher guidance; they are educational support, not medical treatment or formal individualized education plans. Use fictional preferences in this shared demo.
+
+## Accessibility & learning support
+
+This build merges the AllenOS accessibility and learning feature set into CampusLoop. Both feature sets ship together and are wired into the same application shell.
+
+The floating accessibility button (bottom-left) and the header controls open:
+
+- **Accessibility Suite** — high-contrast and large-text modes, visual edge-glow alerts, and a single place to reach every assistive tool. Preferences persist per browser.
+- **Live Captions** — browser speech recognition when supported and microphone access is granted, with a typed-note alternative. AI summaries need a configured Gemini key. Capture stops when closed, reset or switched to another persona.
+- **Sign-language practice** — an illustrative virtual hand, letters/numbers and campus prompts. This is a practice prototype, not a validated ISL/ASL interpreter; sign languages differ and instruction should be checked with a qualified teacher.
+- **Mute AAC Screen** — large on-screen quick-prompt cards so non-verbal students can take part in a book handover or mentoring session without speaking.
+- **AI Polyglot Translation** — live AI content translation across the supported language list. Interface labels use a bundled dictionary with English fallback where a translation is missing.
+
+**Virtual Study Rooms** live under **Peer Mentoring → Virtual Study Rooms**. Rooms support text messages, hand-raising, saved study notes, a local drawing board, AAC quick prompts and illustrative fingerspelling. Joining a mentoring session can open a private room for its learner and mentor. Room state stays in this browser; there is no network collaboration or voice/video call. Drawing strokes are temporary; use study notes to save text.
+
+The server also exposes the AllenOS assistive endpoints alongside `/api/loop-ai`:
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/translate` | Translate a single string |
+| `POST /api/translate-batch` | Translate a JSON array of strings |
+| `POST /api/accessibility/summarize-captions` | Summarise live-caption transcripts |
+| `POST /api/tutor/scan-page` | Analyse a textbook page |
+| `POST /api/tutor/generate-video` | Build an educational video prompt |
+| `POST /api/tutor/generate-quiz` | Generate a practice quiz |
+| `POST /api/tutor/chat` | Answer a textbook doubt |
+
+Requests that need AI report an explicit offline state without `GEMINI_API_KEY`. The app retains original text when translation is unavailable; it does not invent translations, scanned pages or tutoring results. The AI concept helper requests the room's actual topic. The tutor endpoints are server capabilities; this merge does not add a textbook-scanner interface or generate playable videos. The video endpoint returns a lesson/video prompt only.
+
+All eight AI endpoints share a connection-based request limit. Page scans accept validated JPEG/PNG/WebP images up to 4 MiB decoded; text routes retain a smaller request limit. Regression tests use injected providers to verify valid replies, malformed output, unavailable services and sanitized errors without paid API calls.
+
+The interface uses a warm neutral palette, green accents, simpler navigation and calmer student-facing copy. Accessibility preferences remain available, keyboard focus is visible, and reduced-motion preferences are respected.
 
 ## Demo boundaries
 

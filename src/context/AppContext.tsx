@@ -13,12 +13,18 @@ import {
   RewardItem,
   CanteenRedemption,
   MajorRewardRequest,
+  VirtualStudyRoom,
+  StudyRoomMode,
+  StudyRoomParticipant,
+  StudyRoomMessage,
+  StudyRoomWhiteboardNote,
   LearningSupport,
   LearningPlan,
   LearningPlanDraft,
   QuizQuestion,
 } from '../types';
 import { SEED_USERS, SEED_BOOKS, SEED_TRANSACTIONS } from '../data/seedData';
+import { SEED_STUDY_ROOMS, STEM_ASL_GESTURES } from '../data/studyRoomData';
 import { getQuizForTopic } from '../data/quizBank';
 import { getUserTier, REWARD_CATALOGUE, TIER_DEFINITIONS } from '../data/rewardData';
 import { createId as newId } from '../utils/ids';
@@ -200,6 +206,32 @@ interface AppContextType {
   // Notifications
   markNotificationAsRead: (notificationId: string) => void;
   clearNotifications: () => void;
+  // Virtual Study Rooms
+  studyRooms: VirtualStudyRoom[];
+  activeStudyRoomId: string | null;
+  setActiveStudyRoomId: (id: string | null) => void;
+  joinStudyRoom: (roomId: string) => { success: boolean; message: string };
+  leaveStudyRoom: (roomId: string) => void;
+  createStudyRoom: (data: {
+    title: string;
+    subject: string;
+    topic: string;
+    grade: string;
+    mode: StudyRoomMode;
+    description: string;
+  }) => { success: boolean; message: string; room?: VirtualStudyRoom };
+  sendStudyRoomMessage: (
+    roomId: string,
+    text: string,
+    options?: { isAslSigned?: boolean; gestureTag?: string; aacQuickChip?: boolean }
+  ) => { success: boolean; messageId: string };
+  addStudyRoomWhiteboardNote: (
+    roomId: string,
+    note: { text: string; type: 'concept' | 'formula' | 'solution' | 'doubt' }
+  ) => void;
+  clearStudyRoomWhiteboard: (roomId: string) => void;
+  toggleStudyRoomHandRaise: (roomId: string) => boolean;
+  getOrCreateSessionStudyRoom: (session: MentoringSession) => VirtualStudyRoom | undefined;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -265,6 +297,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [showMilestoneModal, setShowMilestoneModal] = useState<boolean>(false);
   const [resetGeneration, setResetGeneration] = useState(0);
 
+  const [studyRooms, setStudyRooms, studyRoomsRef] = useLiveState<VirtualStudyRoom[]>(() => {
+    try {
+      const saved = localStorage.getItem(`${STORAGE_KEY}_STUDY_ROOMS`);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return SEED_STUDY_ROOMS;
+  });
+
+  const [activeStudyRoomId, updateActiveStudyRoomId, activeStudyRoomIdRef] = useLiveState<string | null>(null);
+  const studyReplyTimers = useRef(new Map<ReturnType<typeof setTimeout>, string>());
+  const cancelStudyRoomReplies = (roomId?: string) => {
+    for (const [timer, targetRoom] of studyReplyTimers.current) {
+      if (roomId === undefined || targetRoom === roomId) {
+        clearTimeout(timer);
+        studyReplyTimers.current.delete(timer);
+      }
+    }
+  };
+  useEffect(() => () => cancelStudyRoomReplies(), []);
+
   const [notifications, setNotifications] = useLiveState<AppNotification[]>(() => {
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_NOTIFS`);
@@ -293,24 +345,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       localStorage.setItem(`${STORAGE_KEY}_TXS`, JSON.stringify(transactions));
       localStorage.setItem(`${STORAGE_KEY}_REDEMPTIONS`, JSON.stringify(redemptions));
       localStorage.setItem(`${STORAGE_KEY}_MAJOR_REWARDS`, JSON.stringify(majorRewardRequests));
+      localStorage.setItem(`${STORAGE_KEY}_STUDY_ROOMS`, JSON.stringify(studyRooms));
       localStorage.setItem(`${STORAGE_KEY}_NOTIFS`, JSON.stringify(notifications));
     } catch (e) {
       console.warn('LocalStorage save error:', e);
     }
-  }, [users, currentUserId, books, sessions, transactions, redemptions, majorRewardRequests, notifications]);
+  }, [users, currentUserId, books, sessions, transactions, redemptions, majorRewardRequests, studyRooms, notifications]);
 
   const currentUser = users[currentUserId] || SEED_USERS.aarav;
   const getCurrentUser = () => usersRef.current[currentUserIdRef.current] || SEED_USERS.aarav;
 
   // Account switching
   const switchUser = (userId: string) => {
-    if (usersRef.current[userId]) {
+    if (usersRef.current[userId] && userId !== currentUserIdRef.current) {
+      cancelStudyRoomReplies();
+      if (activeStudyRoomIdRef.current) leaveStudyRoom(activeStudyRoomIdRef.current);
       setCurrentUserId(userId);
     }
   };
 
   // Repeatable Reset Demo Action
   const resetAllData = () => {
+    cancelStudyRoomReplies();
     // Reset transient UI even when the active persona is already Aarav.
     setResetGeneration((generation) => generation + 1);
     setUsers(SEED_USERS);
@@ -320,6 +376,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setTransactions(SEED_TRANSACTIONS);
     setRedemptions([]);
     setMajorRewardRequests([]);
+    setStudyRooms(SEED_STUDY_ROOMS);
+    updateActiveStudyRoomId(null);
     setShowMilestoneModal(false);
     setNotifications([
       {
@@ -1454,6 +1512,412 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setNotifications((prev) => prev.filter((n) => n.userId !== currentUser.id));
   };
 
+  // --- VIRTUAL STUDY ROOM ENGINE ---
+  const canAccessStudyRoom = (room: VirtualStudyRoom, user: User): boolean => {
+    if (!room.isLive) return false;
+    if (!room.sessionId) return true;
+    const session = sessionsRef.current.find((item) => item.id === room.sessionId);
+    return Boolean(session && session.status !== 'declined'
+      && (session.studentId === user.id || session.mentorId === user.id || user.roles.includes('admin')));
+  };
+  const roomRole = (user: User): StudyRoomParticipant['role'] => user.roles.includes('admin') ? 'admin'
+    : user.isVerifiedMentor ? 'mentor' : user.roles.includes('senior') ? 'senior' : 'learner';
+
+  const joinStudyRoom = (roomId: string) => {
+    const room = studyRoomsRef.current.find((r) => r.id === roomId);
+    const currentUser = getCurrentUser();
+    if (!room) return { success: false, message: 'Study Room not found.' };
+    if (!canAccessStudyRoom(room, currentUser)) return { success: false, message: 'This study room is closed or is reserved for its mentoring participants.' };
+    if (activeStudyRoomIdRef.current && activeStudyRoomIdRef.current !== roomId) {
+      leaveStudyRoom(activeStudyRoomIdRef.current);
+    }
+
+    setStudyRooms((prev) =>
+      prev.map((r) => {
+        if (r.id !== roomId) return r;
+        const exists = r.participants.some((p) => p.id === currentUser.id);
+        const updatedParticipants: StudyRoomParticipant[] = exists
+          ? r.participants.map((p) =>
+              p.id === currentUser.id ? { ...p, role: roomRole(currentUser), lastActive: 'Just now' } : p
+            )
+          : [
+              ...r.participants,
+              {
+                id: currentUser.id,
+                name: currentUser.name,
+                avatar: currentUser.avatar,
+                grade: currentUser.grade,
+                role: roomRole(currentUser),
+                isAudioOn: false,
+                isVideoOn: false,
+                isAslMode: r.mode === 'asl_supported' || r.mode === 'hybrid',
+                isHandRaised: false,
+                isSpeaking: false,
+                isSigning: false,
+                lastActive: 'Just now',
+              },
+            ];
+
+        return {
+          ...r,
+          participants: updatedParticipants,
+          participantCount: updatedParticipants.length,
+        };
+      })
+    );
+
+    updateActiveStudyRoomId(roomId);
+    return { success: true, message: `Joined "${room.title}"!` };
+  };
+
+  const leaveStudyRoom = (roomId: string) => {
+    const userId = getCurrentUser().id;
+    cancelStudyRoomReplies(roomId);
+    setStudyRooms((previous) => previous.map((room) => {
+      if (room.id !== roomId) return room;
+      const participants = room.participants.filter((participant) => participant.id !== userId);
+      return { ...room, participants, participantCount: participants.length };
+    }));
+    if (activeStudyRoomIdRef.current === roomId) {
+      updateActiveStudyRoomId(null);
+    }
+  };
+
+  const setActiveStudyRoomId = (roomId: string | null) => {
+    if (roomId) joinStudyRoom(roomId);
+    else if (activeStudyRoomIdRef.current) leaveStudyRoom(activeStudyRoomIdRef.current);
+  };
+
+  const createStudyRoom = (data: {
+    title: string;
+    subject: string;
+    topic: string;
+    grade: string;
+    mode: StudyRoomMode;
+    description: string;
+  }) => {
+    const currentUser = getCurrentUser();
+    if (!validText(data.title, 160, true)) return { success: false, message: 'Please provide a room title of up to 160 characters.' };
+    if (!validText(data.subject, 120) || !validText(data.topic, 500) || !validText(data.grade, 100)
+      || !validText(data.description, 2000) || !['asl_supported', 'text_based', 'hybrid'].includes(data.mode)) {
+      return { success: false, message: 'Choose a valid study room mode and keep room details within their text limits.' };
+    }
+    if (activeStudyRoomIdRef.current) leaveStudyRoom(activeStudyRoomIdRef.current);
+
+    const newRoomId = newId('room');
+    const newRoom: VirtualStudyRoom = {
+      id: newRoomId,
+      title: data.title.trim(),
+      subject: data.subject.trim() || 'General Study',
+      topic: data.topic.trim() || 'Collaborative Review',
+      grade: data.grade.trim() || currentUser.grade,
+      mode: data.mode,
+      hostId: currentUser.id,
+      hostName: currentUser.name,
+      hostAvatar: currentUser.avatar,
+      hostBadge: currentUser.isVerifiedMentor ? 'Verified Mentor' : currentUser.badge,
+      description: data.description.trim() || 'Live collaborative study session.',
+      isLive: true,
+      participantCount: 1,
+      participants: [
+        {
+          id: currentUser.id,
+          name: currentUser.name,
+          avatar: currentUser.avatar,
+          grade: currentUser.grade,
+          role: roomRole(currentUser),
+          isAudioOn: false,
+          isVideoOn: false,
+          isAslMode: data.mode === 'asl_supported' || data.mode === 'hybrid',
+          isHandRaised: false,
+          isSpeaking: false,
+          isSigning: false,
+          lastActive: 'Just now',
+        },
+      ],
+      createdAt: new Date().toISOString(),
+      tags: [data.subject, data.grade, data.mode === 'asl_supported' ? 'ASL Supported' : 'Text Based'],
+      whiteboardNotes: [
+        {
+          id: newId('note-init'),
+          authorId: currentUser.id,
+          authorName: currentUser.name,
+          type: 'concept',
+          text: `Welcome to ${data.title}! Use this collaborative whiteboard for formulas, diagrams, and doubts.`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        },
+      ],
+      messages: [
+        {
+          id: newId('msg-init'),
+          senderId: currentUser.id,
+          senderName: currentUser.name,
+          senderAvatar: currentUser.avatar,
+          senderRole: roomRole(currentUser),
+          text: `Study room created! Collaborative workspace and ${data.mode === 'asl_supported' ? 'ASL visualizer' : 'text chat'} ready.`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          isAslSigned: data.mode === 'asl_supported',
+        },
+      ],
+    };
+
+    setStudyRooms((prev) => [newRoom, ...prev]);
+    updateActiveStudyRoomId(newRoomId);
+
+    return {
+      success: true,
+      message: `Virtual Study Room "${newRoom.title}" is live!`,
+      room: newRoom,
+    };
+  };
+
+  const sendStudyRoomMessage = (
+    roomId: string,
+    text: string,
+    options?: { isAslSigned?: boolean; gestureTag?: string; aacQuickChip?: boolean }
+  ) => {
+    const currentUser = getCurrentUser();
+    const room = studyRoomsRef.current.find((item) => item.id === roomId);
+    if (!room || !canAccessStudyRoom(room, currentUser) || !room.participants.some((participant) => participant.id === currentUser.id)
+      || !validText(text, 4000, true)
+      || (options?.gestureTag !== undefined && !validText(options.gestureTag, 120))) {
+      return { success: false, messageId: '' };
+    }
+
+    const newMsgId = newId('msg');
+    const newMsg: StudyRoomMessage = {
+      id: newMsgId,
+      senderId: currentUser.id,
+      senderName: currentUser.name,
+      senderAvatar: currentUser.avatar,
+      senderRole: roomRole(currentUser),
+      text: text.trim(),
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      isAslSigned: options?.isAslSigned,
+      gestureTag: options?.gestureTag,
+      aacQuickChip: options?.aacQuickChip,
+    };
+
+    setStudyRooms((prev) =>
+      prev.map((r) => {
+        if (r.id !== roomId) return r;
+        return {
+          ...r,
+          messages: [...r.messages, newMsg],
+        };
+      })
+    );
+
+    // Simulated peer collaboration reply when Aarav sends a question
+    if (currentUser.id === 'aarav' && !text.includes('Welcome')
+      && room.participants.some((participant) => participant.id === 'rohan') && usersRef.current.rohan?.isVerifiedMentor) {
+      const timer = setTimeout(() => {
+        studyReplyTimers.current.delete(timer);
+        const latestRoom = studyRoomsRef.current.find((item) => item.id === roomId);
+        if (getCurrentUser().id !== currentUser.id || !latestRoom
+          || !latestRoom.messages.some((message) => message.id === newMsgId)
+          || !latestRoom.participants.some((participant) => participant.id === currentUser.id)
+          || !usersRef.current.rohan?.isVerifiedMentor) return;
+        const rohanReplyId = newId('msg-reply');
+        const isTrig = text.toLowerCase().includes('angle') || text.toLowerCase().includes('triangle') || text.toLowerCase().includes('tan');
+        const replyText = isTrig
+          ? 'Great question! Remember: tan(θ) = Opposite / Adjacent. If distance is 20m and angle is 60°, tan(60°) = √3 = h / 20 => h = 20√3 m.'
+          : 'Got your message! Let us visualize this step-by-step on the collaborative board.';
+
+        const rohanReply: StudyRoomMessage = {
+          id: rohanReplyId,
+          senderId: 'rohan',
+          senderName: 'Rohan Verma (simulated reply)',
+          senderAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=160&q=80',
+          senderRole: 'mentor',
+          text: `[Demo reply] ${replyText}`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          isAslSigned: true,
+          gestureTag: isTrig ? 'TRIANGLE' : 'UNDERSTAND',
+        };
+
+        setStudyRooms((innerPrev) =>
+          innerPrev.map((r) => {
+            if (r.id !== roomId) return r;
+            return {
+              ...r,
+              messages: [...r.messages, rohanReply],
+            };
+          })
+        );
+      }, 1200);
+      studyReplyTimers.current.set(timer, roomId);
+    }
+
+    return { success: true, messageId: newMsgId };
+  };
+
+  const addStudyRoomWhiteboardNote = (
+    roomId: string,
+    note: { text: string; type: 'concept' | 'formula' | 'solution' | 'doubt' }
+  ) => {
+    const currentUser = getCurrentUser();
+    const room = studyRoomsRef.current.find((item) => item.id === roomId);
+    if (!room || !canAccessStudyRoom(room, currentUser) || !room.participants.some((participant) => participant.id === currentUser.id)
+      || !validText(note.text, 2000, true) || !['concept', 'formula', 'solution', 'doubt'].includes(note.type)) return;
+    const newNote: StudyRoomWhiteboardNote = {
+      id: newId('note'),
+      authorId: currentUser.id,
+      authorName: currentUser.name,
+      type: note.type,
+      text: note.text.trim(),
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+
+    setStudyRooms((prev) =>
+      prev.map((r) => {
+        if (r.id !== roomId) return r;
+        return {
+          ...r,
+          whiteboardNotes: [...r.whiteboardNotes, newNote],
+        };
+      })
+    );
+  };
+
+  const clearStudyRoomWhiteboard = (roomId: string) => {
+    const currentUser = getCurrentUser();
+    const room = studyRoomsRef.current.find((item) => item.id === roomId);
+    if (!room || !canAccessStudyRoom(room, currentUser)
+      || (room.hostId !== currentUser.id && !currentUser.roles.includes('admin'))) return;
+    setStudyRooms((prev) =>
+      prev.map((r) => (r.id === roomId ? { ...r, whiteboardNotes: [] } : r))
+    );
+  };
+
+  const toggleStudyRoomHandRaise = (roomId: string) => {
+    const currentUser = getCurrentUser();
+    const room = studyRoomsRef.current.find((item) => item.id === roomId);
+    if (!room || !canAccessStudyRoom(room, currentUser) || !room.participants.some((participant) => participant.id === currentUser.id)) return false;
+    let newState = false;
+    setStudyRooms((prev) =>
+      prev.map((r) => {
+        if (r.id !== roomId) return r;
+        const updated = r.participants.map((p) => {
+          if (p.id === currentUser.id) {
+            newState = !p.isHandRaised;
+            return { ...p, isHandRaised: newState };
+          }
+          return p;
+        });
+        return { ...r, participants: updated };
+      })
+    );
+    return newState;
+  };
+
+  const getOrCreateSessionStudyRoom = (session: MentoringSession): VirtualStudyRoom | undefined => {
+    const currentUser = getCurrentUser();
+    const users = usersRef.current;
+    const storedSession = sessionsRef.current.find((item) => item.id === session.id);
+    if (!storedSession || storedSession.status === 'requested' || storedSession.status === 'declined'
+      || (storedSession.studentId !== currentUser.id && storedSession.mentorId !== currentUser.id && !currentUser.roles.includes('admin'))) return;
+    // Use the current store record, not a stale or caller-modified session card.
+    session = storedSession;
+    const existing = studyRoomsRef.current.find((r) => r.sessionId === session.id);
+    if (existing) return existing;
+    if (session.status !== 'accepted') return;
+
+    const newRoomId = `room-session-${session.id}`;
+    const newRoom: VirtualStudyRoom = {
+      id: newRoomId,
+      title: `${session.topic} (Live Collaborative Studio)`,
+      subject: session.subject,
+      topic: session.topic,
+      grade: session.grade,
+      mode: 'asl_supported',
+      hostId: session.mentorId,
+      hostName: session.mentorName,
+      hostAvatar:
+        users[session.mentorId]?.avatar ||
+        'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=160&q=80',
+      hostBadge: 'Verified Peer Mentor',
+      description: `Local demo workspace for mentoring on ${session.topic}. Messages, visual supports and shared notes are stored in this browser; no live video or interpreter is connected.`,
+      isLive: true,
+      participantCount: 2,
+      sessionId: session.id,
+      participants: [
+        {
+          id: session.mentorId,
+          name: session.mentorName,
+          avatar:
+            users[session.mentorId]?.avatar ||
+            'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=160&q=80',
+          grade: users[session.mentorId]?.grade || 'Mentor',
+          role: 'mentor',
+          isAudioOn: false,
+          isVideoOn: false,
+          isAslMode: true,
+          isHandRaised: false,
+          isSpeaking: false,
+          isSigning: false,
+          lastActive: 'Just now',
+        },
+        {
+          id: session.studentId,
+          name: session.studentName,
+          avatar:
+            users[session.studentId]?.avatar ||
+            'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=160&q=80',
+          grade: session.studentGrade || 'Grade 10',
+          role: 'learner',
+          isAudioOn: false,
+          isVideoOn: false,
+          isAslMode: true,
+          isHandRaised: false,
+          isSpeaking: false,
+          isSigning: false,
+          lastActive: 'Just now',
+        },
+      ],
+      createdAt: new Date().toISOString(),
+      tags: [session.subject, session.grade, 'Mentoring Session', 'ASL Supported'],
+      whiteboardNotes: [
+        {
+          id: `note-s1-${session.id}`,
+          authorId: session.mentorId,
+          authorName: session.mentorName,
+          type: 'concept',
+          text: session.assessmentMode === 'supported'
+            ? `Session: ${session.topic}. Goal: ${session.learningSupport?.goal || 'Follow the learner’s agreed plan'}. Use the agreed response format and breaks. Participation credit does not depend on quiz scores.`
+            : `Session: ${session.topic}.${session.baselineQuiz ? ` Baseline diagnostic score: ${session.baselineQuiz.score}/${session.baselineQuiz.totalQuestions}.` : ''} A final diagnostic gain of at least 30 percentage points qualifies for the quiz bonus.`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        },
+        {
+          id: `note-s2-${session.id}`,
+          authorId: session.mentorId,
+          authorName: session.mentorName,
+          type: 'concept',
+          text: (session.learningPlan?.status !== 'draft' && session.learningPlan?.lessons[0]?.activities)
+            || `Add the ideas and questions you want to explore about ${session.topic}.`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        },
+      ],
+      messages: [
+        {
+          id: `msg-init-s-${session.id}`,
+          senderId: 'system',
+          senderName: 'CampusLoop Demo',
+          senderAvatar:
+            users[session.mentorId]?.avatar ||
+            'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=160&q=80',
+          senderRole: 'system',
+          text: `Demo workspace opened for ${session.topic}. Share notes and questions here using your preferred response format.`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          isAslSigned: false,
+        },
+      ],
+    };
+
+    setStudyRooms((prev) => [newRoom, ...prev]);
+    return newRoom;
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -1493,6 +1957,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         getImpactMetrics,
         markNotificationAsRead,
         clearNotifications,
+        studyRooms,
+        activeStudyRoomId,
+        setActiveStudyRoomId,
+        joinStudyRoom,
+        leaveStudyRoom,
+        createStudyRoom,
+        sendStudyRoomMessage,
+        addStudyRoomWhiteboardNote,
+        clearStudyRoomWhiteboard,
+        toggleStudyRoomHandRaise,
+        getOrCreateSessionStudyRoom,
       }}
     >
       {children}

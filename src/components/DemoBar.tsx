@@ -31,12 +31,11 @@ export const DemoBar: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 py-2 flex flex-wrap items-center justify-between gap-3">
         {/* Mode Tag & Status */}
         <div className="flex items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full font-bold bg-amber-400/20 text-amber-300 border border-amber-400/40 tracking-wide uppercase text-[10px]">
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-            Demo Mode Active
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full font-medium bg-white/10 text-slate-200 border border-white/20 text-[11px]">
+            Campus demo
           </span>
           <span className="text-slate-300 font-medium hidden sm:inline">
-            Local Persistence • Shared State Across Roles
+            Try it as a student or mentor
           </span>
           <button
             onClick={() => setShowInfo(!showInfo)}
@@ -49,7 +48,7 @@ export const DemoBar: React.FC = () => {
 
         {/* Quick Role Switcher Buttons */}
         <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-slate-400 text-[11px] mr-1 hidden md:inline">Switch Persona:</span>
+          <span className="text-slate-300 text-[11px] mr-1 hidden md:inline">Try as:</span>
           {Object.values(users).map((user) => {
             const isActive = user.id === currentUser.id;
             return (
@@ -84,7 +83,7 @@ export const DemoBar: React.FC = () => {
 
         {/* Live Counters & Reset */}
         <div className="flex items-center gap-3">
-          <div className="hidden lg:flex items-center gap-2 text-slate-400 font-mono text-[11px]">
+          <div className="hidden 2xl:flex items-center gap-2 text-slate-400 text-[11px]">
             <span>Avail: <strong className="text-slate-200">{availableBooks}</strong></span>
             <span>•</span>
             <span>Reserved: <strong className="text-amber-300">{reservedBooks}</strong></span>
