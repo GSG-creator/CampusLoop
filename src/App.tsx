@@ -16,7 +16,7 @@ import { FloatingLoopAI } from './components/FloatingLoopAI';
 import { Heart, Sparkles, BookOpen, GraduationCap, ShieldCheck } from 'lucide-react';
 
 const MainApp: React.FC = () => {
-  const { currentUser, showMilestoneModal, setShowMilestoneModal } = useApp();
+  const { currentUser, users, switchUser, showMilestoneModal, setShowMilestoneModal } = useApp();
   const [activeTab, setActiveTab] = useState<string>('books');
   const [isListingModalOpen, setIsListingModalOpen] = useState(false);
 
@@ -85,9 +85,12 @@ const MainApp: React.FC = () => {
       {/* 5. 10,000 Credit Milestone WOW Celebration Modal */}
       <MilestoneCelebrationModal
         isOpen={showMilestoneModal}
+        targetUser={users.rohan}
+        isOwnMilestone={currentUser.id === 'rohan'}
         onClose={() => setShowMilestoneModal(false)}
         onExploreVault={() => {
           setShowMilestoneModal(false);
+          if (currentUser.id !== 'rohan') switchUser('rohan');
           setActiveTab('rewards');
         }}
       />

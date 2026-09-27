@@ -31,6 +31,18 @@ npm run build
 
 After `npm run build`, set `NODE_ENV=production` in the shell or hosting environment and run `npm start`. The Express server serves both the built site and `/api/loop-ai`. `npm run preview` previews only the static frontend and does not run the API.
 
+## Accessible peer mentoring
+
+In **Peer Mentoring**, request academic help and choose **Create an adapted learning plan with my mentor**. Select helpful learning preferences, a goal, response method, session length and flexible breaks. Choose a supported conversation/demonstration or an untimed quiz. Plans accommodate learner-selected needs, including neurodegenerative conditions and intellectual or developmental disabilities; a diagnosis is not requested or used to infer ability.
+
+Choose **Online** with an optional school-approved HTTPS meeting link, or **Offline** with an optional campus location. CampusLoop records this arrangement; it does not create conference rooms. Confirm the meeting details with the mentor if left blank.
+
+Switch to the assigned mentor (Rohan in the demo), accept the request, then create, edit and share the three-lesson curriculum draft. The learner can agree or ask for a change. Dr. Ananya can optionally review it from the **Mentoring Sessions** tab in **Admin Audit** or the mentoring page. Editing a plan clears previous review and agreement; a plan must be shared and agreed before an adapted session can be marked finished.
+
+Supported sessions finish with a learner participation confirmation and reflection. Practising, maintaining a skill and needing more support receive the same participation credit; no fabricated quiz scores are shown. A full demo reset clears the plans, preferences and session activity too.
+
+See [the teaching sources and design notes](docs/accessible-mentoring.md) for EEF (UK) and CAST (US) guidance. Drafts require mentor/learner adaptation and teacher guidance; they are educational support, not medical treatment or formal individualized education plans. Use fictional preferences in this shared demo.
+
 ## Demo boundaries
 
 Persona switching and campus state are stored in browser local storage. This repository does not implement Firebase authentication, a server-backed campus database, or real payments. Role checks protect the demo workflows; they are not a production security boundary. State updates are coordinated within one running provider, not across independent tabs or devices.

@@ -114,7 +114,7 @@ export const WalletView: React.FC = () => {
           <div>
             <h4 className="font-bold text-slate-800 text-xs">Peer Mentoring (+70 CR Max)</h4>
             <p className="text-[11px] text-slate-500 leading-relaxed mt-0.5">
-              +40 base completion, +10 for ≥4★ feedback, +20 for ≥30 pp observed diagnostic score improvement.
+              +40 base completion and +10 for ≥4★ feedback. Supported learning adds +20 for confirmed participation and reflection, regardless of improvement. Standard sessions add +20 for a quiz gain of at least 30 percentage points.
             </p>
           </div>
         </div>
@@ -286,15 +286,15 @@ export const WalletView: React.FC = () => {
                                 <span className="font-bold text-slate-800">+{tx.breakdown.feedbackBonus} CR ({tx.breakdown.rating}★)</span>
                               </div>
                               <div>
-                                <span className="text-slate-400 block text-[10px]">Observed Quiz Gain</span>
+                                <span className="text-slate-400 block text-[10px]">{tx.breakdown.assessmentMode === 'supported' ? 'Supported Session Completion' : 'Observed Quiz Gain'}</span>
                                 <span className="font-bold text-indigo-600">
-                                  +{tx.breakdown.observedImprovement} pp (+{tx.breakdown.quizImprovementBonus} CR)
+                                  {tx.breakdown.assessmentMode === 'supported' ? `+${tx.breakdown.supportCompletionBonus ?? 0} CR` : <>+{tx.breakdown.observedImprovement} pp (+{tx.breakdown.quizImprovementBonus} CR)</>}
                                 </span>
                               </div>
                               <div>
-                                <span className="text-slate-400 block text-[10px]">Diagnostic Progress</span>
+                                <span className="text-slate-400 block text-[10px]">{tx.breakdown.assessmentMode === 'supported' ? 'Completion Basis' : 'Diagnostic Progress'}</span>
                                 <span className="font-semibold text-slate-800">
-                                  {tx.breakdown.baselinePercentage}% → {tx.breakdown.finalPercentage}%
+                                  {tx.breakdown.assessmentMode === 'supported' ? 'Learner-confirmed participation and reflection' : <>{tx.breakdown.baselinePercentage}% → {tx.breakdown.finalPercentage}%</>}
                                 </span>
                               </div>
                             </div>

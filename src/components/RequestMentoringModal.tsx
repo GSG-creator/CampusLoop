@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { getQuizForTopic } from '../data/quizBank';
 import { LoopAiActionCard } from '../types';
+import { LearningSupportFields, initialLearningSupport } from './LearningSupportFields';
+import { useDialogFocus } from './useDialogFocus';
 import {
   X,
   GraduationCap,
@@ -33,6 +35,13 @@ const RequestMentoringForm: React.FC<RequestMentoringModalProps> = ({
   initialDraft,
 }) => {
   const { users, currentUser, requestMentoringSession } = useApp();
+  const dialogRef = useDialogFocus(onClose);
+  const [useAdaptedPlan, setUseAdaptedPlan] = useState(false);
+  const [learningSupport, setLearningSupport] = useState(initialLearningSupport);
+  const [assessmentMode, setAssessmentMode] = useState<'quiz' | 'supported'>('quiz');
+  const [classMode, setClassMode] = useState<'online' | 'offline'>('offline');
+  const [meetingLink, setMeetingLink] = useState('');
+  const [location, setLocation] = useState('');
 
   // Form State
   const [subject, setSubject] = useState(initialDraft?.subject ?? 'Mathematics');
@@ -54,6 +63,8 @@ const RequestMentoringForm: React.FC<RequestMentoringModalProps> = ({
   const [step, setStep] = useState<1 | 2>(1);
   const [baselineAnswers, setBaselineAnswers] = useState<number[]>([-1, -1, -1]);
   const [errorMsg, setErrorMsg] = useState('');
+  const reviewHeading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => { if (step === 2) reviewHeading.current?.focus(); }, [step]);
 
   // Filter verified mentors
   const verifiedMentors = Object.values(users).filter(
@@ -99,6 +110,11 @@ const RequestMentoringForm: React.FC<RequestMentoringModalProps> = ({
       return;
     }
 
+    if (useAdaptedPlan && !learningSupport.goal.trim()) {
+      setErrorMsg('Please add a learning goal for your plan.');
+      return;
+    }
+
     setStep(2);
   };
 
@@ -106,7 +122,7 @@ const RequestMentoringForm: React.FC<RequestMentoringModalProps> = ({
     setErrorMsg('');
 
     // Check all questions answered
-    if (baselineAnswers.some((ans) => ans === -1)) {
+    if (assessmentMode === 'quiz' && baselineAnswers.some((ans) => ans === -1)) {
       setErrorMsg('Please answer all 3 baseline questions to establish starting proficiency.');
       return;
     }
@@ -119,7 +135,12 @@ const RequestMentoringForm: React.FC<RequestMentoringModalProps> = ({
       date,
       time,
       description,
-      baselineAnswers,
+      baselineAnswers: assessmentMode === 'supported' ? [] : baselineAnswers,
+      assessmentMode,
+      learningSupport: useAdaptedPlan ? learningSupport : undefined,
+      classMode,
+      meetingLink: classMode === 'online' ? meetingLink.trim() : undefined,
+      location: classMode === 'offline' ? location.trim() : undefined,
     });
 
     if (res.success) {
@@ -134,7 +155,7 @@ const RequestMentoringForm: React.FC<RequestMentoringModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-150">
-      <div className="bg-white rounded-3xl max-w-xl w-full max-h-[92vh] overflow-y-auto shadow-2xl border border-slate-200 flex flex-col">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="request-help-title" tabIndex={-1} className="bg-white rounded-3xl max-w-2xl w-full max-h-[92vh] overflow-y-auto shadow-2xl border border-slate-200 flex flex-col">
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-violet-900 to-indigo-900 text-white rounded-t-3xl">
           <div className="flex items-center gap-2">
@@ -142,14 +163,15 @@ const RequestMentoringForm: React.FC<RequestMentoringModalProps> = ({
               <GraduationCap className="w-5 h-5 text-violet-200" />
             </div>
             <div>
-              <h2 className="text-base font-bold">Request Academic Help</h2>
+              <h2 id="request-help-title" className="text-lg font-bold">Request Academic Help</h2>
               <p className="text-xs text-violet-200">
-                {step === 1 ? 'Step 1: Session Details & Mentor' : 'Step 2: Pre-Session Baseline Quiz'}
+                {step === 1 ? 'Step 1: Your session and learning preferences' : assessmentMode === 'supported' ? 'Step 2: Review your request' : 'Step 2: Pre-Session Baseline Quiz'}
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
+            aria-label="Close mentoring request"
             className="p-1 rounded-lg text-white/80 hover:text-white hover:bg-white/10"
           >
             <X className="w-5 h-5" />
@@ -175,7 +197,7 @@ const RequestMentoringForm: React.FC<RequestMentoringModalProps> = ({
         </div>
 
         {errorMsg && (
-          <div className="mx-6 mt-4 p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs flex items-center gap-2">
+          <div role="alert" className="mx-6 mt-4 p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-sm flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0" />
             <span>{errorMsg}</span>
           </div>
@@ -207,10 +229,13 @@ const RequestMentoringForm: React.FC<RequestMentoringModalProps> = ({
                 {verifiedMentors.map((mentor) => {
                   const isSelected = selectedMentorId === mentor.id;
                   return (
-                    <div
+                    <button
+                      type="button"
+                      aria-pressed={isSelected}
+                      aria-label={`Select mentor ${mentor.name}`}
                       key={mentor.id}
                       onClick={() => setSelectedMentorId(mentor.id)}
-                      className={`p-3 rounded-2xl border text-xs cursor-pointer transition-all flex items-center justify-between ${
+                      className={`w-full p-3 rounded-2xl border text-sm text-left cursor-pointer transition-all flex items-center justify-between ${
                         isSelected
                           ? 'border-indigo-600 bg-indigo-50/60 ring-2 ring-indigo-400'
                           : 'border-slate-200 hover:border-slate-300 bg-white'
@@ -240,7 +265,7 @@ const RequestMentoringForm: React.FC<RequestMentoringModalProps> = ({
                         </span>
                         <span className="text-[10px] text-emerald-600 font-semibold">Free for you</span>
                       </div>
-                    </div>
+                    </button>
                   );
                 })}
               </div>
@@ -249,10 +274,11 @@ const RequestMentoringForm: React.FC<RequestMentoringModalProps> = ({
             {/* Subject & Topic */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
+                <label htmlFor="mentoring-subject" className="block text-sm font-bold text-slate-700 mb-1">
                   Subject *
                 </label>
                 <select
+                  id="mentoring-subject"
                   value={subject}
                   onChange={(e) => setSubject(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-indigo-500 bg-white"
@@ -264,10 +290,11 @@ const RequestMentoringForm: React.FC<RequestMentoringModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
+                <label htmlFor="mentoring-topic" className="block text-sm font-bold text-slate-700 mb-1">
                   Topic *
                 </label>
                 <input
+                  id="mentoring-topic"
                   type="text"
                   required
                   value={topic}
@@ -284,10 +311,11 @@ const RequestMentoringForm: React.FC<RequestMentoringModalProps> = ({
             {/* Grade, Date & Time */}
             <div className="grid grid-cols-3 gap-2">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
+                <label htmlFor="mentoring-grade" className="block text-sm font-bold text-slate-700 mb-1">
                   Target Grade
                 </label>
                 <select
+                  id="mentoring-grade"
                   value={grade}
                   onChange={(e) => setGrade(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-indigo-500 bg-white"
@@ -300,10 +328,11 @@ const RequestMentoringForm: React.FC<RequestMentoringModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
+                <label htmlFor="mentoring-date" className="block text-sm font-bold text-slate-700 mb-1">
                   Date *
                 </label>
                 <input
+                  id="mentoring-date"
                   type="date"
                   required
                   value={date}
@@ -313,10 +342,11 @@ const RequestMentoringForm: React.FC<RequestMentoringModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
+                <label htmlFor="mentoring-time" className="block text-sm font-bold text-slate-700 mb-1">
                   Time *
                 </label>
                 <input
+                  id="mentoring-time"
                   type="time"
                   required
                   value={time}
@@ -326,12 +356,28 @@ const RequestMentoringForm: React.FC<RequestMentoringModalProps> = ({
               </div>
             </div>
 
+            <fieldset className="space-y-3 rounded-2xl border border-slate-200 p-4 text-base">
+              <legend className="px-1 font-semibold text-slate-800">Class format</legend>
+              <div className="flex flex-wrap gap-4">
+                <label className="flex items-center gap-2"><input type="radio" name="class-mode" className="h-5 w-5" checked={classMode === 'offline'} onChange={() => setClassMode('offline')} />Offline — in person</label>
+                <label className="flex items-center gap-2"><input type="radio" name="class-mode" className="h-5 w-5" checked={classMode === 'online'} onChange={() => setClassMode('online')} />Online — video or audio</label>
+              </div>
+              {classMode === 'online' ? <label className="block font-semibold">Meeting link (optional)
+                <input type="url" maxLength={1000} value={meetingLink} onChange={e => setMeetingLink(e.target.value)} placeholder="https:// — use your school's agreed meeting service" className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2.5 font-normal" />
+                <span className="mt-1 block text-sm font-normal text-slate-600">CampusLoop does not create a video room. Leave blank to arrange the link with your mentor.</span>
+              </label> : <label className="block font-semibold">Classroom or campus location (optional)
+                <input maxLength={200} value={location} onChange={e => setLocation(e.target.value)} placeholder="For example: accessible study room, school library" className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2.5 font-normal" />
+                <span className="mt-1 block text-sm font-normal text-slate-600">Use an agreed school location with the access arrangements you need, or arrange it with your mentor.</span>
+              </label>}
+            </fieldset>
+
             {/* Description */}
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">
+              <label htmlFor="mentoring-description" className="block text-sm font-bold text-slate-700 mb-1">
                 Learning Goals & Difficulties
               </label>
               <textarea
+                id="mentoring-description"
                 rows={2}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
@@ -340,16 +386,36 @@ const RequestMentoringForm: React.FC<RequestMentoringModalProps> = ({
               />
             </div>
 
+            <div className="space-y-4">
+              <label className="flex items-start gap-3 rounded-xl border border-indigo-200 bg-indigo-50 p-4 text-base font-semibold text-indigo-950">
+                <input type="checkbox" className="mt-1 h-5 w-5 shrink-0" checked={useAdaptedPlan} onChange={e => {
+                  setUseAdaptedPlan(e.target.checked);
+                  setAssessmentMode(e.target.checked ? 'supported' : 'quiz');
+                }} />
+                Create an adapted learning plan with my mentor
+              </label>
+              {useAdaptedPlan && <>
+                <LearningSupportFields value={learningSupport} onChange={setLearningSupport} />
+                <label className="block text-base font-semibold text-slate-800">How would you like to check your learning?
+                  <select className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-3 font-normal" value={assessmentMode} onChange={e => setAssessmentMode(e.target.value as 'quiz' | 'supported')}>
+                    <option value="supported">Supported conversation or demonstration (no quiz)</option>
+                    <option value="quiz">Untimed three-question quiz</option>
+                  </select>
+                </label>
+                <p className="text-sm text-slate-600">A peer mentor can help you practise. Agree subject goals and any changes to schoolwork with your teacher or special educator.</p>
+              </>}
+            </div>
+
             {/* Next Button */}
             <div className="pt-2 flex items-center justify-between">
               <span className="text-[11px] text-slate-400">
-                Next: Quick 3-question baseline quiz
+                {assessmentMode === 'supported' ? 'Next: Review your preferences' : 'Next: Untimed 3-question baseline quiz'}
               </span>
               <button
                 type="submit"
                 className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-200 transition-all flex items-center gap-1.5"
               >
-                <span>Continue to Baseline Quiz</span>
+                <span>{assessmentMode === 'supported' ? 'Review learning request' : 'Continue to Baseline Quiz'}</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -359,11 +425,21 @@ const RequestMentoringForm: React.FC<RequestMentoringModalProps> = ({
         {/* Step 2: Baseline Quiz */}
         {step === 2 && (
           <div className="p-6 space-y-4">
+            <h3 ref={reviewHeading} tabIndex={-1} className="text-lg font-bold">{assessmentMode === 'supported' ? 'Review your learning request' : 'Your starting point'}</h3>
+            {assessmentMode === 'supported' ? <section className="space-y-3 rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-base leading-relaxed" aria-label="Supported learning request summary">
+              <p><strong>Topic:</strong> {topic}</p>
+              <p><strong>Your goal:</strong> {learningSupport.goal}</p>
+              <p><strong>Mentor:</strong> {users[selectedMentorId]?.name}</p>
+              <p><strong>Session:</strong> {date} at {time}, {learningSupport.sessionMinutes} minutes with flexible breaks.</p>
+              <p><strong>Class format:</strong> {classMode === 'online' ? 'Online' : 'Offline — in person'}. {classMode === 'online' ? meetingLink || 'Arrange the meeting link with your mentor.' : location || 'Arrange the location with your mentor.'}</p>
+              <p>You can discuss or demonstrate your starting point with your mentor. No quiz score is recorded. Your mentor can prepare a plan for you to review, with an optional teacher review.</p>
+              <p>At the end, confirm participation and tell us what helped. Mentor recognition does not depend on improving a test score.</p>
+            </section> : <>
             <div className="p-3 bg-indigo-50 rounded-2xl border border-indigo-100 text-xs text-indigo-950 flex items-start justify-between gap-3">
               <div>
                 <h4 className="font-bold">Pre-Session Baseline Assessment</h4>
                 <p className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">
-                  Topic: <strong>{topic}</strong>. These 3 diagnostic questions determine your baseline understanding. An observed improvement of ≥30 percentage points on the final quiz awards a bonus to your mentor!
+                  Topic: <strong>{topic}</strong>. Try these practice questions at your own pace. There is no timer. You can return to details and choose a supported conversation instead.
                 </p>
               </div>
               <button
@@ -419,6 +495,7 @@ const RequestMentoringForm: React.FC<RequestMentoringModalProps> = ({
             </div>
 
             {/* Actions */}
+            </>}
             <div className="pt-2 flex items-center justify-between border-t border-slate-100">
               <button
                 type="button"

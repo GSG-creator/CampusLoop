@@ -57,6 +57,8 @@ export interface CreditBreakdown {
   baseCompletion: number; // 40
   feedbackBonus: number; // 10 if rating >= 4
   quizImprovementBonus: number; // 20 if improvement >= 30 percentage points
+  assessmentMode?: 'quiz' | 'supported';
+  supportCompletionBonus?: number; // 20 for confirmed supported participation, independent of score gain
   total: number; // max 70
   baselinePercentage: number;
   finalPercentage: number;
@@ -111,6 +113,48 @@ export interface QuizSubmission {
   completedAt: string;
 }
 
+export type SupportNeed = 'memory' | 'processing' | 'reading' | 'communication' | 'energy' | 'motor';
+export type ResponseMode = 'spoken' | 'typed' | 'pointing' | 'demonstration';
+
+export interface LearningSupport {
+  needs: SupportNeed[];
+  strengths: string;
+  goal: string;
+  responseMode: ResponseMode;
+  sessionMinutes: number;
+  breakEveryMinutes: number;
+}
+
+export interface LearningPlanLesson {
+  title: string;
+  objective: string;
+  activities: string;
+  evidence: string;
+}
+
+export interface LearningPlanDraft {
+  goal: string;
+  strengths: string;
+  startingPoint: string;
+  strategies: string[];
+  lessons: LearningPlanLesson[];
+  materials: string;
+  responseMode: ResponseMode;
+  reviewDate: string;
+  teacherGuidance: string;
+}
+
+export interface LearningPlan extends LearningPlanDraft {
+  status: 'draft' | 'shared' | 'reviewed';
+  authorId: string;
+  updatedAt: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  reviewNote?: string;
+  learnerResponse?: 'agreed' | 'changes_requested';
+  learnerNote?: string;
+}
+
 export interface MentoringSession {
   id: string;
   studentId: string;
@@ -138,6 +182,14 @@ export interface MentoringSession {
   creditBreakdown?: CreditBreakdown;
   transactionId?: string;
   simulatedSession?: boolean;
+  learningSupport?: LearningSupport;
+  learningPlan?: LearningPlan;
+  assessmentMode?: 'quiz' | 'supported';
+  sessionMinutes?: number;
+  goalReview?: 'practised' | 'maintained' | 'needs_more_support';
+  classMode?: 'online' | 'offline';
+  meetingLink?: string;
+  location?: string;
 }
 
 // --- REWARD TIERS & CANTEEN PERKS ---

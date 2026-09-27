@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { MentoringSession } from '../types';
 import { getQuizForTopic } from '../data/quizBank';
+import { SupportedSessionConfirmation } from './SupportedSessionConfirmation';
 import {
   X,
   CheckCircle2,
@@ -20,7 +21,14 @@ interface LearnerConfirmationModalProps {
   onSuccess: (msg: string) => void;
 }
 
-export const LearnerConfirmationModal: React.FC<LearnerConfirmationModalProps> = ({
+export const LearnerConfirmationModal: React.FC<LearnerConfirmationModalProps> = (props) => {
+  if (!props.session) return null;
+  return props.session.assessmentMode === 'supported'
+    ? <SupportedSessionConfirmation key={props.session.id} {...props} session={props.session} />
+    : <QuizSessionConfirmation key={props.session.id} {...props} />;
+};
+
+const QuizSessionConfirmation: React.FC<LearnerConfirmationModalProps> = ({
   session,
   onClose,
   onSuccess,

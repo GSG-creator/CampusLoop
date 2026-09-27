@@ -78,7 +78,7 @@ test('suspended mentors cannot be selected through a stale mentor role', async (
   assert.ok(text(renderer!.root).includes('No verified mentors are available'));
   await act(async () => renderer!.root.findByType('form').props.onSubmit({ preventDefault: noop }));
   assert.ok(text(renderer!.root).includes('Please select a verified mentor.'));
-  assert.equal(renderer!.root.findAllByType('input').filter((node) => node.props.type === 'radio').length, 0);
+  assert.equal(renderer!.root.findAllByType('input').filter((node) => node.props.type === 'radio' && node.props.name?.startsWith('baseline-q-')).length, 0);
 });
 
 test('completed mentoring ledger preserves zero bonuses and zero gain', async () => {
