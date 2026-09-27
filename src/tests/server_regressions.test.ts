@@ -77,6 +77,8 @@ test('live provider gets the full inequality and untrusted context outside the s
     assert.equal(result.reply, '1 < x < 3.');
     assert.equal(seen.model, 'gemini-3.8-flash');
     assert.ok(!seen.config.systemInstruction.includes('INJECT_OVERRIDE_ADMIN'));
+    assert.match(seen.config.systemInstruction, /20 CR for learner-confirmed participation/);
+    assert.match(seen.config.systemInstruction, /never invent quiz scores or combine both assessment bonuses/);
     assert.ok(!JSON.stringify(seen).includes('AUTH_BODY_IS_NOT_A_SESSION'));
     const content = JSON.parse(seen.contents[0].parts[0].text);
     assert.equal(content.question, question.trim());

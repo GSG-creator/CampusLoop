@@ -4,7 +4,7 @@ React, Vite and Express demo for campus book sharing, peer mentoring, credits an
 
 ## Run locally
 
-Use Node.js 22.12 or newer.
+Use Node.js 24 LTS.
 
 ```sh
 npm ci
@@ -29,7 +29,13 @@ npm run build
 
 ## Serve the built app
 
-After `npm run build`, set `NODE_ENV=production` in the shell or hosting environment and run `npm start`. The Express server serves both the built site and `/api/loop-ai`. `npm run preview` previews only the static frontend and does not run the API.
+Run `npm run build`, then `npm start`. The build produces the frontend in `dist/` and a compiled `server.js`; the start command selects production mode automatically. The Express server serves both the built site and `/api/loop-ai`, and listens on `0.0.0.0` using the hosting environment's `PORT`. `npm run preview` previews only the static frontend and does not run the API.
+
+## Deploy from Google AI Studio
+
+Import **GSG-creator/CampusLoop**, branch **main**, into AI Studio Build mode, or pull the latest changes through **Settings → GitHub** if the app is already connected. Confirm `GEMINI_API_KEY` in AI Studio's server-side Secrets panel for live AI, then use **Publish**. The demo also runs without a key.
+
+See [the Google AI Studio deployment guide](docs/google-ai-studio.md) for the exact build/start settings, verification steps and Cloud Run container option.
 
 ## Accessible peer mentoring
 
