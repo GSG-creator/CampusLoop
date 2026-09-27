@@ -1,0 +1,6 @@
+{
+  "name": "CAMPUSLOOP",
+  "description": "Learn. Share. Earn. Grow. Student peer-to-peer book sharing, mentoring, and campus credits exchange.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
