@@ -1,10 +1,26 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { RefreshCw, Users, ShieldAlert, CheckCircle2, Info } from 'lucide-react';
 
 export const DemoBar: React.FC = () => {
-  const { users, currentUser, switchUser, resetAllData, books, transactions } = useApp();
+  const { users, currentUser, switchUser, resetAllData, resetGeneration, books, transactions } = useApp();
   const [showInfo, setShowInfo] = useState(false);
+  const [showResetConfirmation, setShowResetConfirmation] = useState(false);
+  const resetButton = useRef<HTMLButtonElement>(null);
+  const cancelButton = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (showResetConfirmation) cancelButton.current?.focus();
+  }, [showResetConfirmation]);
+
+  useEffect(() => {
+    if (resetGeneration > 0) resetButton.current?.focus();
+  }, [resetGeneration]);
+
+  const cancelReset = () => {
+    setShowResetConfirmation(false);
+    resetButton.current?.focus();
+  };
 
   const availableBooks = books.filter((b) => b.status === 'available').length;
   const reservedBooks = books.filter((b) => b.status === 'reserved').length;
@@ -79,19 +95,56 @@ export const DemoBar: React.FC = () => {
           </div>
 
           <button
-            onClick={() => {
-              if (confirm('Reset demo state back to default seeds? (Aarav 350 cr, Meera 1,250 cr, Rohan 9,940 cr)')) {
-                resetAllData();
-              }
-            }}
+            ref={resetButton}
+            onClick={() => setShowResetConfirmation(true)}
+            aria-label="Reset demo"
+            aria-expanded={showResetConfirmation}
+            aria-controls="demo-reset-confirmation"
             className="flex items-center gap-1 px-2 py-1 rounded bg-slate-800 hover:bg-rose-900/60 text-slate-300 hover:text-rose-200 border border-slate-700 hover:border-rose-600/50 transition-colors text-[11px]"
             title="Reset Seed Data"
           >
             <RefreshCw className="w-3 h-3" />
-            <span className="hidden sm:inline">Reset Seed</span>
+            <span>Reset Demo</span>
           </button>
         </div>
       </div>
+
+      {showResetConfirmation && (
+        <section
+          id="demo-reset-confirmation"
+          aria-labelledby="demo-reset-heading"
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') cancelReset();
+          }}
+          className="border-t border-rose-700/50 bg-slate-950 px-4 py-4"
+        >
+          <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <h2 id="demo-reset-heading" className="font-bold text-white">Reset demo data?</h2>
+              <p className="mt-1 text-slate-300">
+                Clear demo activity, rewards and chats, restore the starting books and balances,
+                and return to Aarav. This clears the demo saved in this browser.
+              </p>
+              <p className="mt-1 text-slate-400">Aarav: 350 cr • Meera: 1,250 cr • Rohan: 9,940 cr</p>
+            </div>
+            <div className="flex gap-2">
+              <button ref={cancelButton} onClick={cancelReset} className="rounded-md border border-slate-600 px-3 py-2 text-slate-200 hover:bg-slate-800">
+                Cancel reset
+              </button>
+              <button onClick={() => {
+                setShowResetConfirmation(false);
+                resetAllData();
+              }} className="rounded-md bg-rose-600 px-3 py-2 font-bold text-white hover:bg-rose-500">
+                Confirm reset
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {resetGeneration > 0 && !showResetConfirmation && (
+        <p role="status" className="max-w-7xl mx-auto px-4 pb-2 text-emerald-300">Demo reset complete.</p>
+      )}
 
       {showInfo && (
         <div className="bg-slate-950 px-4 py-3 border-t border-slate-800 text-slate-300 text-xs">

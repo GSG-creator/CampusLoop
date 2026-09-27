@@ -4,6 +4,7 @@ import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { AppProvider, useApp } from '../context/AppContext';
 import { REWARD_CATALOGUE } from '../data/rewardData';
+import { SEED_BOOKS, SEED_TRANSACTIONS, SEED_USERS } from '../data/seedData';
 
 // Exercise the real provider and its React batching, rather than copied business logic.
 let app: ReturnType<typeof useApp>;
@@ -210,5 +211,84 @@ describe('AppProvider workflow regressions', () => {
     await run(() => app.switchUser('ananya'));
     const scans = await run(() => [app.scanCanteenCode(id), app.scanCanteenCode(id)]);
     assert.deepEqual(scans.map((result) => result.success), [true, false]);
+  });
+
+  it('resets all demo activity and persists the opening state across a reload', async () => {
+    storage.set('unrelated-app-setting', 'preserve');
+    const sessionId = await pendingConfirmation();
+    await run(() => app.confirmAndFinalizeSession(sessionId, finalQuiz));
+    await run(() => {
+      app.reserveBook('book-rd-sharma-10');
+      app.reserveBook('book-hc-verma-physics');
+      app.switchUser('meera');
+      app.confirmHandover('book-rd-sharma-10');
+      app.confirmHandover('book-hc-verma-physics');
+      app.deleteBookListing('book-oswaal-science-10');
+      app.createBookListing({
+        title: 'Demo custom book', author: 'Demo author', grade: 'Grade 10',
+        subject: 'Mathematics', condition: 'Good', description: 'Temporary listing', listingType: 'donate',
+      });
+      app.redeemCanteenItem(reward('snack-samosa-chai'), true);
+      app.redeemCanteenItem(reward('snack-samosa-chai'), false);
+      app.switchUser('rohan');
+      app.requestMajorReward(reward('tech-ipad-air'));
+      app.redeemCanteenItem(reward('meal-legend-combo'), true);
+      app.switchUser('ananya');
+      app.toggleMentorVerification('meera');
+      app.toggleMentorVerification('rohan');
+    });
+    await run(() => {
+      app.approveMajorReward(app.majorRewardRequests[0].id, true);
+      app.scanCanteenCode(app.redemptions[0].id);
+      app.notifications.forEach((notification) => app.markNotificationAsRead(notification.id));
+    });
+    assert.equal(app.currentUser.id, 'ananya');
+    assert.equal(app.sessions.length, 1);
+    assert.equal(app.redemptions.length, 3);
+    assert.equal(app.majorRewardRequests[0].status, 'approved');
+    assert.equal(app.users.rohan.isVerifiedMentor, false);
+    assert.equal(app.showMilestoneModal, true);
+    assert.ok(app.transactions.length > SEED_TRANSACTIONS.length);
+
+    const assertOpeningState = () => {
+      assert.deepEqual(app.users, SEED_USERS);
+      assert.deepEqual(app.books, SEED_BOOKS);
+      assert.deepEqual(app.transactions, SEED_TRANSACTIONS);
+      assert.deepEqual(app.sessions, []);
+      assert.deepEqual(app.redemptions, []);
+      assert.deepEqual(app.majorRewardRequests, []);
+      assert.equal(app.currentUser.id, 'aarav');
+      assert.equal(app.showMilestoneModal, false);
+      assert.equal(app.notifications.length, 1);
+      assert.equal(app.notifications[0].id, 'notif-reset');
+      assert.equal(app.notifications[0].userId, 'aarav');
+      assert.equal(app.notifications[0].read, false);
+      assert.equal(app.checkFreebieAvailable('meera', 'snack').available, true);
+      assert.equal(storage.get('unrelated-app-setting'), 'preserve');
+    };
+
+    await run(() => app.resetAllData());
+    assertOpeningState();
+    for (const [key, expected] of Object.entries({
+      USERS: SEED_USERS, BOOKS: SEED_BOOKS, TXS: SEED_TRANSACTIONS,
+      SESSIONS: [], REDEMPTIONS: [], MAJOR_REWARDS: [], NOTIFS: app.notifications,
+    })) {
+      assert.deepEqual(JSON.parse(storage.get(`CAMPUSLOOP_STATE_V3_${key}`)!), expected);
+    }
+    assert.equal(storage.get('CAMPUSLOOP_STATE_V3_CURRENT_USER_ID'), 'aarav');
+    await act(async () => renderer.unmount());
+    await mount();
+    assertOpeningState();
+  });
+
+  it('signals every reset even when Aarav is already selected and resets are batched', async () => {
+    const reset = app.resetAllData;
+    assert.equal(app.currentUser.id, 'aarav');
+    assert.equal(app.resetGeneration, 0);
+    await run(() => reset());
+    assert.equal(app.resetGeneration, 1);
+    await run(() => { reset(); reset(); });
+    assert.equal(app.currentUser.id, 'aarav');
+    assert.equal(app.resetGeneration, 3);
   });
 });

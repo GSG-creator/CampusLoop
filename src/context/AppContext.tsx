@@ -53,6 +53,7 @@ interface AppContextType {
   notifications: AppNotification[];
   redemptions: CanteenRedemption[];
   majorRewardRequests: MajorRewardRequest[];
+  resetGeneration: number;
   showMilestoneModal: boolean;
   setShowMilestoneModal: (show: boolean) => void;
   switchUser: (userId: string) => void;
@@ -184,6 +185,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const [showMilestoneModal, setShowMilestoneModal] = useState<boolean>(false);
+  const [resetGeneration, setResetGeneration] = useState(0);
 
   const [notifications, setNotifications] = useLiveState<AppNotification[]>(() => {
     try {
@@ -231,6 +233,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Repeatable Reset Demo Action
   const resetAllData = () => {
+    // Reset transient UI even when the active persona is already Aarav.
+    setResetGeneration((generation) => generation + 1);
     setUsers(SEED_USERS);
     setCurrentUserId('aarav');
     setBooks(SEED_BOOKS);
@@ -1228,6 +1232,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         notifications,
         redemptions,
         majorRewardRequests,
+        resetGeneration,
         showMilestoneModal,
         setShowMilestoneModal,
         switchUser,

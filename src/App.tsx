@@ -118,10 +118,17 @@ const MainApp: React.FC = () => {
   );
 };
 
+const ResettableApp: React.FC = () => {
+  const { resetGeneration } = useApp();
+  // Reset local forms, filters, chats and pending UI callbacks even when the
+  // selected persona was already Aarav. The shared provider stays mounted.
+  return <MainApp key={resetGeneration} />;
+};
+
 export default function App() {
   return (
     <AppProvider>
-      <MainApp />
+      <ResettableApp />
     </AppProvider>
   );
 }
